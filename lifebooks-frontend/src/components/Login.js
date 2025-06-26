@@ -15,7 +15,7 @@ const Login = () => {
     setMessage('');
 
     try {
-      const response = await axios.post('/api/login', { email, password });
+      const response = await axios.post('https://lifebooks-ai-backend.onrender.com/api/login', { email, password });
       
       if (response.data.token) {
         localStorage.setItem('token', response.data.token);
