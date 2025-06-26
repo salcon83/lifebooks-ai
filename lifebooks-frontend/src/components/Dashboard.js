@@ -14,15 +14,19 @@ const Dashboard = ({ user, onLogout }) => {
   const fetchStories = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/stories', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setStories(response.data.stories);
-    } catch (error) {
-      setError('Failed to load stories');
-    } finally {
-      setLoading(false);
-    }
+     const response = await axios.get('https://lifebooks-ai-backend.onrender.com/api/stories', {
+    headers: { Authorization: `Bearer ${token}` },
+});
+
+// Ensure stories is always an array, even if null or undefined
+setStories(response.data.stories || []);
+
+} catch (error) {
+    setError('Failed to load stories');
+    console.error('Error fetching stories:', error);
+} finally {
+    setLoading(false);
+}
   };
 
   const createNewStory = async () => {
