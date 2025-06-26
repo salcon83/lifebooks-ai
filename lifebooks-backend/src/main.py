@@ -1,178 +1,274 @@
+import os
+import io
+import datetime
+import jwt
+import bcrypt
+import openai
+import stripe
+import json
+import tempfile
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-import jwt
-import datetime
-import os
-import openai
-import tempfile
-import io
-import stripe
 from werkzeug.utils import secure_filename
-from models import db, User, Story, VoiceRecording, AutoSave, DataBackup
-import json
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
-
+# Initialize Flask app
 app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+CORS(app, origins=["*"])
 
 # Configuration
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "your_super_secret_key")
+app.config['SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///lifebooks.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB max file size
 
-# Database configuration
-database_url = os.environ.get("DATABASE_URL")
-if database_url and database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url or "postgresql://localhost/lifebooks_db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
 # Initialize database
-db.init_app(app)
-migrate = Migrate(app, db)
+db = SQLAlchemy(app)
 
-# OpenAI API configuration
+# API Keys
 openai.api_key = os.environ.get("OPENAI_API_KEY")
-
-# Stripe API configuration
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
 # Subscription plans
 SUBSCRIPTION_PLANS = {
-    "trial": {
-        "name": "Free Trial",
-        "price": 0,
-        "features": ["5 AI interview questions", "Sample PDF generation", "Preview experience"],
-        "limits": {"interviews": 5, "recordings": 0, "ai_enhancements": 0, "books": 1}
+    'trial': {
+        'name': 'Free Trial',
+        'price': 0,
+        'ai_interviews': 5,
+        'ai_enhancements': 10,
+        'book_exports': 1,
+        'voice_recordings': 5
     },
-    "pro": {
-        "name": "Lifebooks Pro",
-        "price": 1000,  # €10.00 in cents
-        "stripe_price_id": "price_pro_monthly",
-        "features": ["Unlimited AI interviews", "Unlimited voice recordings", "Unlimited AI enhancement", "Basic PDF/EPUB export", "Cloud storage & auto-save"],
-        "limits": {"interviews": -1, "recordings": -1, "ai_enhancements": -1, "books": -1}
+    'pro': {
+        'name': 'Lifebooks Pro',
+        'price': 10.00,  # €10/month
+        'ai_interviews': -1,  # unlimited
+        'ai_enhancements': -1,
+        'book_exports': -1,
+        'voice_recordings': -1
     }
 }
 
-# Pay-per-service add-ons
-ADDON_SERVICES = {
-    "professional_printing": {
-        "name": "Professional Printing",
-        "base_price": 1500,  # €15.00 base price
-        "price_tiers": {
-            "basic": {"price": 1500, "description": "Standard paperback (100-200 pages)"},
-            "premium": {"price": 3000, "description": "Hardcover with dust jacket (100-300 pages)"},
-            "deluxe": {"price": 5000, "description": "Premium hardcover with photo inserts (unlimited pages)"}
+# Database Models
+class User(db.Model):
+    __tablename__ = 'users'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    
+    # Subscription details
+    subscription_plan = db.Column(db.String(50), default='trial')
+    subscription_status = db.Column(db.String(50), default='active')
+    stripe_customer_id = db.Column(db.String(255))
+    subscription_start = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    subscription_end = db.Column(db.DateTime)
+    
+    # Usage tracking (resets monthly)
+    monthly_ai_interviews = db.Column(db.Integer, default=0)
+    monthly_ai_enhancements = db.Column(db.Integer, default=0)
+    monthly_book_exports = db.Column(db.Integer, default=0)
+    monthly_voice_recordings = db.Column(db.Integer, default=0)
+    usage_reset_date = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    
+    # Metadata
+    created_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+    last_login = db.Column(db.DateTime)
+    
+    def set_password(self, password):
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    def check_password(self, password):
+        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+    
+    def check_usage_limit(self, feature):
+        # Reset monthly usage if needed
+        now = datetime.datetime.now(datetime.timezone.utc)
+        if now >= self.usage_reset_date + datetime.timedelta(days=30):
+            self.monthly_ai_interviews = 0
+            self.monthly_ai_enhancements = 0
+            self.monthly_book_exports = 0
+            self.monthly_voice_recordings = 0
+            self.usage_reset_date = now
+            db.session.commit()
+        
+        plan = SUBSCRIPTION_PLANS.get(self.subscription_plan, SUBSCRIPTION_PLANS['trial'])
+        limit = plan.get(feature, 0)
+        
+        if limit == -1:  # unlimited
+            return True, "Unlimited usage"
+        
+        current_usage = getattr(self, f'monthly_{feature}', 0)
+        if current_usage >= limit:
+            return False, f"Monthly limit of {limit} {feature} reached. Upgrade to Pro for unlimited access."
+        
+        return True, f"Usage: {current_usage}/{limit}"
+    
+    def increment_usage(self, feature):
+        current_value = getattr(self, f'monthly_{feature}', 0)
+        setattr(self, f'monthly_{feature}', current_value + 1)
+        db.session.commit()
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'subscription_plan': self.subscription_plan,
+            'subscription_status': self.subscription_status,
+            'created_at': self.created_at.isoformat(),
+            'usage': {
+                'ai_interviews': self.monthly_ai_interviews,
+                'ai_enhancements': self.monthly_ai_enhancements,
+                'book_exports': self.monthly_book_exports,
+                'voice_recordings': self.monthly_voice_recordings
+            }
         }
-    },
-    "amazon_publishing": {
-        "name": "Amazon KDP Publishing Service",
-        "price": 2500,  # €25.00
-        "description": "Professional formatting, cover optimization, and upload assistance"
-    },
-    "premium_covers": {
-        "name": "Premium AI Book Covers",
-        "price": 1000,  # €10.00 per cover
-        "description": "Custom AI-generated covers with multiple revisions"
-    },
-    "family_sharing": {
-        "name": "Family Sharing",
-        "price": 500,  # €5.00 per month
-        "description": "Multiple family members can contribute to stories"
+
+class Story(db.Model):
+    __tablename__ = 'stories'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    
+    title = db.Column(db.String(500), nullable=False)
+    content = db.Column(db.Text)
+    summary = db.Column(db.Text)
+    tags = db.Column(db.Text)  # JSON string
+    word_count = db.Column(db.Integer, default=0)
+    
+    # Auto-save functionality
+    auto_save_content = db.Column(db.Text)
+    last_auto_save = db.Column(db.DateTime)
+    
+    # Metadata
+    created_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+    
+    def update_word_count(self):
+        if self.content:
+            self.word_count = len(self.content.split())
+        else:
+            self.word_count = 0
+    
+    def auto_save_content_func(self, content):
+        self.auto_save_content = content
+        self.last_auto_save = datetime.datetime.now(datetime.timezone.utc)
+        db.session.commit()
+    
+    def get_tags_list(self):
+        if self.tags:
+            try:
+                return json.loads(self.tags)
+            except:
+                return []
+        return []
+    
+    def set_tags_list(self, tags_list):
+        self.tags = json.dumps(tags_list)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'content': self.content,
+            'summary': self.summary,
+            'tags': self.get_tags_list(),
+            'word_count': self.word_count,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'last_auto_save': self.last_auto_save.isoformat() if self.last_auto_save else None
+        }
+
+# Helper functions
+def generate_jwt_token(user_id):
+    payload = {
+        'user_id': user_id,
+        'exp': datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
     }
-}
-
-# Allowed audio file extensions
-ALLOWED_AUDIO_EXTENSIONS = {'mp3', 'wav', 'mp4', 'm4a', 'webm', 'flac'}
-
-def allowed_audio_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO_EXTENSIONS
+    return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
 
 def get_user_from_token(request):
-    """Extract and validate user from JWT token"""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.startswith('Bearer '):
         return None
-
-    token = auth_header.split(" ")[1]
+    
+    token = auth_header.split(' ')[1]
     try:
-        data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
-        email = data["user"]
-        user = User.query.filter_by(email=email, is_active=True).first()
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        user = User.query.get(payload['user_id'])
         return user
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
+    except:
         return None
 
+def allowed_audio_file(filename):
+    ALLOWED_EXTENSIONS = {'mp3', 'wav', 'mp4', 'm4a', 'webm', 'flac'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# API Routes
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    
     if not email or not password:
         return jsonify({"message": "Email and password are required"}), 400
-
+    
     if len(password) < 6:
-        return jsonify({"message": "Password must be at least 6 characters long"}), 400
-
+        return jsonify({"message": "Password must be at least 6 characters"}), 400
+    
     # Check if user already exists
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
-        return jsonify({"message": "User already exists"}), 409
-
+        return jsonify({"message": "User already exists"}), 400
+    
     try:
-        # Create new user with trial subscription
-        user = User(
-            email=email,
-            subscription_plan='trial',
-            subscription_status='active'
-        )
+        # Create new user
+        user = User(email=email)
         user.set_password(password)
         
         db.session.add(user)
         db.session.commit()
         
-        return jsonify({"message": "User registered successfully"}), 201
+        # Generate JWT token
+        token = generate_jwt_token(user.id)
+        
+        return jsonify({
+            "message": "Registration successful",
+            "token": token,
+            "user": user.to_dict()
+        }), 201
         
     except Exception as e:
         db.session.rollback()
-        return jsonify({"message": "Registration failed", "error": str(e)}), 500
+        return jsonify({
+            "message": "Registration failed",
+            "error": str(e)
+        }), 500
 
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json()
-    email = data.get("email")
-    password = data.get("password")
-
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+    
     if not email or not password:
         return jsonify({"message": "Email and password are required"}), 400
-
+    
+    user = User.query.filter_by(email=email).first()
+    
+    if not user or not user.check_password(password):
+        return jsonify({"message": "Invalid email or password"}), 401
+    
     try:
-        # Find user in database
-        user = User.query.filter_by(email=email).first()
-        
-        if not user or not user.check_password(password):
-            return jsonify({"message": "Invalid email or password"}), 401
-
-        if not user.is_active:
-            return jsonify({"message": "Account is deactivated"}), 401
-
         # Update last login
         user.last_login = datetime.datetime.now(datetime.timezone.utc)
         db.session.commit()
-
+        
         # Generate JWT token
-        token = jwt.encode({
-            "user": email,
-            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-        }, app.config["SECRET_KEY"], algorithm="HS256")
-
+        token = generate_jwt_token(user.id)
+        
         return jsonify({
             "message": "Login successful",
             "token": token,
@@ -180,911 +276,78 @@ def login():
         }), 200
         
     except Exception as e:
-        return jsonify({"message": "Login failed", "error": str(e)}), 500
+        return jsonify({
+            "message": "Login failed",
+            "error": str(e)
+        }), 500
 
-@app.route("/api/protected", methods=["GET"])
-def protected():
+@app.route("/api/user/profile", methods=["GET"])
+def get_profile():
     user = get_user_from_token(request)
     if not user:
         return jsonify({"message": "Authentication required"}), 401
+    
+    return jsonify({"user": user.to_dict()}), 200
 
+# Simple demo endpoints for testing
+@app.route("/api/demo/interview", methods=["POST"])
+def demo_interview():
+    data = request.get_json()
+    topic = data.get("topic", "your life")
+    
+    # Simple demo questions
+    questions = [
+        f"Tell me about a memorable moment related to {topic}.",
+        f"How did {topic} make you feel?",
+        f"What details do you remember most clearly?",
+        f"What impact did {topic} have on your life?",
+        f"What would you want others to know about {topic}?"
+    ]
+    
     return jsonify({
-        "message": f"Hello {user}, you have access to protected data!"
+        "message": "Demo interview started",
+        "questions": questions,
+        "topic": topic
     }), 200
 
-# Real Whisper API Integration for Voice Transcription
-@app.route("/api/voice/transcribe", methods=["POST"])
-def transcribe_voice():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    # Check usage limits
-    can_use, limit_message = user.check_usage_limit("recording")
-    if not can_use:
-        return jsonify({"message": limit_message}), 403
-
-    # Check if audio file is present
-    if 'audio' not in request.files:
-        return jsonify({"message": "No audio file provided"}), 400
-    
-    audio_file = request.files['audio']
-    
-    if audio_file.filename == '':
-        return jsonify({"message": "No audio file selected"}), 400
-    
-    if not allowed_audio_file(audio_file.filename):
-        return jsonify({"message": "Invalid audio file format. Supported: mp3, wav, mp4, m4a, webm, flac"}), 400
-
-    try:
-        # Create voice recording record
-        recording = VoiceRecording(
-            user_id=user.id,
-            filename=secure_filename(audio_file.filename),
-            format=audio_file.filename.rsplit('.', 1)[1].lower(),
-            processing_status='processing'
-        )
-        db.session.add(recording)
-        db.session.commit()
-
-        # Create a temporary file to store the uploaded audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{recording.format}") as temp_file:
-            audio_file.save(temp_file.name)
-            recording.file_path = temp_file.name
-            
-            # Use OpenAI Whisper API for transcription
-            with open(temp_file.name, "rb") as audio_data:
-                transcript = openai.Audio.transcribe(
-                    model="whisper-1",
-                    file=audio_data,
-                    response_format="text"
-                )
-            
-            # Update recording with transcript
-            recording.transcript = transcript
-            recording.processing_status = 'completed'
-            recording.processed_at = datetime.datetime.now(datetime.timezone.utc)
-            
-            # Clean up temporary file
-            os.unlink(temp_file.name)
-            
-            # Increment usage counter
-            user.increment_usage("recording")
-            
-            db.session.commit()
-            
-            return jsonify({
-                "message": "Transcription successful",
-                "transcript": transcript,
-                "recording_id": recording.id,
-                "user": user.email
-            }), 200
-            
-    except Exception as e:
-        # Clean up and mark as failed
-        if 'recording' in locals():
-            recording.processing_status = 'failed'
-            db.session.commit()
-        
-        # Clean up temporary file if it exists
-        try:
-            if 'temp_file' in locals():
-                os.unlink(temp_file.name)
-        except:
-            pass
-            
-        return jsonify({
-            "message": "Transcription failed",
-            "error": str(e)
-        }), 500
-
-# AI Text Enhancement using OpenAI
-@app.route("/api/ai/enhance", methods=["POST"])
-def enhance_text():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    # Check usage limits
-    can_use, limit_message = user.check_usage_limit("ai_enhancement")
-    if not can_use:
-        return jsonify({"message": limit_message}), 403
-
+@app.route("/api/demo/pdf", methods=["POST"])
+def demo_pdf():
     data = request.get_json()
-    text = data.get("text", "")
-    enhancement_type = data.get("type", "general")  # general, grammar, style, narrative
+    responses = data.get("responses", [])
+    topic = data.get("topic", "Your Story")
     
-    if not text:
-        return jsonify({"message": "No text provided for enhancement"}), 400
-
-    try:
-        # Define enhancement prompts based on type
-        prompts = {
-            "general": "Improve the following text for clarity, grammar, and readability while maintaining the original voice and meaning:",
-            "grammar": "Fix grammar, spelling, and punctuation errors in the following text while preserving the original meaning:",
-            "style": "Enhance the writing style of the following text to make it more engaging and polished:",
-            "narrative": "Improve the narrative flow and storytelling elements of the following text:"
-        }
-        
-        prompt = prompts.get(enhancement_type, prompts["general"])
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a professional editor helping to improve personal stories and memoirs. Maintain the author's voice and personal style while making improvements."},
-                {"role": "user", "content": f"{prompt}\n\n{text}"}
-            ],
-            max_tokens=2000,
-            temperature=0.3
-        )
-        
-        enhanced_text = response.choices[0].message.content.strip()
-        
-        # Increment usage counter
-        user.increment_usage("ai_enhancement")
-        
-        return jsonify({
-            "message": "Text enhancement successful",
-            "original_text": text,
-            "enhanced_text": enhanced_text,
-            "enhancement_type": enhancement_type
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "message": "Text enhancement failed",
-            "error": str(e)
-        }), 500
-
-# Story Management
-@app.route("/api/story", methods=["POST"])
-def create_story():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    title = data.get("title", "")
-    content = data.get("content", "")
+    # Create simple PDF content
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
     
-    if not title:
-        return jsonify({"message": "Story title is required"}), 400
-
-    story_id = f"{user}_{len(stories.get(user, []))}"
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
     
-    if user not in stories:
-        stories[user] = []
+    story = []
+    story.append(Paragraph(f"Your Life Story: {topic}", styles['Title']))
+    story.append(Spacer(1, 20))
     
-    story = {
-        "id": story_id,
-        "title": title,
-        "content": content,
-        "created_at": datetime.datetime.utcnow().isoformat(),
-        "updated_at": datetime.datetime.utcnow().isoformat()
-    }
+    for i, response in enumerate(responses, 1):
+        story.append(Paragraph(f"Question {i}: {response}", styles['Normal']))
+        story.append(Spacer(1, 10))
     
-    stories[user].append(story)
+    doc.build(story)
+    pdf_content = buffer.getvalue()
+    buffer.close()
     
-    return jsonify({
-        "message": "Story created successfully",
-        "story": story
-    }), 201
+    return send_file(
+        io.BytesIO(pdf_content),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'lifebooks_demo_{topic.replace(" ", "_")}.pdf'
+    )
 
-@app.route("/api/story", methods=["GET"])
-def get_stories():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    user_stories = stories.get(user, [])
-    
-    return jsonify({
-        "message": "Stories retrieved successfully",
-        "stories": user_stories
-    }), 200
-
-@app.route("/api/story/<story_id>", methods=["PUT"])
-def update_story(story_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    
-    user_stories = stories.get(user, [])
-    story = next((s for s in user_stories if s["id"] == story_id), None)
-    
-    if not story:
-        return jsonify({"message": "Story not found"}), 404
-    
-    # Update story fields
-    if "title" in data:
-        story["title"] = data["title"]
-    if "content" in data:
-        story["content"] = data["content"]
-    
-    story["updated_at"] = datetime.datetime.utcnow().isoformat()
-    
-    return jsonify({
-        "message": "Story updated successfully",
-        "story": story
-    }), 200
-
-@app.route("/api/story/<story_id>", methods=["DELETE"])
-def delete_story(story_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    user_stories = stories.get(user, [])
-    story = next((s for s in user_stories if s["id"] == story_id), None)
-    
-    if not story:
-        return jsonify({"message": "Story not found"}), 404
-    
-    stories[user].remove(story)
-    
-    return jsonify({
-        "message": "Story deleted successfully"
-    }), 200
-
-# AI Book Cover Generation using DALL-E
-@app.route("/api/cover/generate", methods=["POST"])
-def generate_cover():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    title = data.get("title", "")
-    description = data.get("description", "")
-    style = data.get("style", "realistic")  # realistic, artistic, vintage, modern
-    
-    if not title:
-        return jsonify({"message": "Book title is required"}), 400
-
-    try:
-        # Create a detailed prompt for book cover generation
-        prompt = f"Professional book cover design for '{title}'. {description}. Style: {style}. High quality, commercial book cover, typography space for title, professional publishing standard."
-        
-        response = openai.Image.create(
-            prompt=prompt,
-            n=1,
-            size="1024x1024"
-        )
-        
-        image_url = response['data'][0]['url']
-        
-        return jsonify({
-            "message": "Book cover generated successfully",
-            "image_url": image_url,
-            "title": title,
-            "style": style
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "message": "Cover generation failed",
-            "error": str(e)
-        }), 500
-
-# PDF/EPUB Publishing
-@app.route("/api/publish", methods=["POST"])
-def publish_book():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    # Check usage limits
-    can_use, limit_message = check_usage_limits(user, "book")
-    if not can_use:
-        return jsonify({"message": limit_message}), 403
-
-    data = request.get_json()
-    title = data.get("title", "")
-    content = data.get("content", "")
-    author = data.get("author", user)
-    format_type = data.get("format", "pdf")  # pdf, epub, both
-    cover_image_url = data.get("cover_image_url", "")
-    
-    if not title or not content:
-        return jsonify({"message": "Title and content are required"}), 400
-
-    try:
-        from reportlab.lib.pagesizes import letter, A4
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.lib.units import inch
-        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
-        import requests
-        from io import BytesIO
-        
-        # Create a temporary directory for the book files
-        book_dir = tempfile.mkdtemp()
-        
-        if format_type in ["pdf", "both"]:
-            # Generate PDF
-            pdf_filename = f"{title.replace(' ', '_')}.pdf"
-            pdf_path = os.path.join(book_dir, pdf_filename)
-            
-            # Create PDF document
-            doc = SimpleDocTemplate(pdf_path, pagesize=A4,
-                                  rightMargin=72, leftMargin=72,
-                                  topMargin=72, bottomMargin=18)
-            
-            # Get styles
-            styles = getSampleStyleSheet()
-            
-            # Create custom styles
-            title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontSize=24,
-                spaceAfter=30,
-                alignment=TA_CENTER,
-                textColor='#2c3e50'
-            )
-            
-            author_style = ParagraphStyle(
-                'CustomAuthor',
-                parent=styles['Normal'],
-                fontSize=14,
-                spaceAfter=30,
-                alignment=TA_CENTER,
-                textColor='#7f8c8d'
-            )
-            
-            content_style = ParagraphStyle(
-                'CustomContent',
-                parent=styles['Normal'],
-                fontSize=12,
-                spaceAfter=12,
-                alignment=TA_JUSTIFY,
-                leftIndent=0,
-                rightIndent=0
-            )
-            
-            # Build PDF content
-            story = []
-            
-            # Add cover image if provided
-            if cover_image_url:
-                try:
-                    response = requests.get(cover_image_url)
-                    img_data = BytesIO(response.content)
-                    img = Image(img_data, width=4*inch, height=6*inch)
-                    img.hAlign = 'CENTER'
-                    story.append(img)
-                    story.append(Spacer(1, 0.5*inch))
-                except:
-                    pass  # Skip if image can't be loaded
-            
-            # Add title and author
-            story.append(Paragraph(title, title_style))
-            story.append(Paragraph(f"by {author}", author_style))
-            story.append(PageBreak())
-            
-            # Add content (split by paragraphs)
-            paragraphs = content.split('\n\n')
-            for para in paragraphs:
-                if para.strip():
-                    story.append(Paragraph(para.strip(), content_style))
-                    story.append(Spacer(1, 12))
-            
-            # Build PDF
-            doc.build(story)
-        
-        if format_type in ["epub", "both"]:
-            # Generate EPUB (simplified version)
-            epub_filename = f"{title.replace(' ', '_')}.epub"
-            epub_path = os.path.join(book_dir, epub_filename)
-            
-            # Create a simple EPUB structure
-            import zipfile
-            
-            with zipfile.ZipFile(epub_path, 'w', zipfile.ZIP_DEFLATED) as epub:
-                # Add mimetype
-                epub.writestr('mimetype', 'application/epub+zip')
-                
-                # Add META-INF/container.xml
-                container_xml = '''<?xml version="1.0"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>'''
-                epub.writestr('META-INF/container.xml', container_xml)
-                
-                # Add content.opf
-                content_opf = f'''<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>{title}</dc:title>
-    <dc:creator>{author}</dc:creator>
-    <dc:identifier id="BookId">lifebooks-{user}-{title.replace(' ', '-').lower()}</dc:identifier>
-    <dc:language>en</dc:language>
-  </metadata>
-  <manifest>
-    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
-    <item id="content" href="content.html" media-type="application/xhtml+xml"/>
-  </manifest>
-  <spine toc="ncx">
-    <itemref idref="content"/>
-  </spine>
-</package>'''
-                epub.writestr('OEBPS/content.opf', content_opf)
-                
-                # Add toc.ncx
-                toc_ncx = f'''<?xml version="1.0" encoding="UTF-8"?>
-<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
-  <head>
-    <meta name="dtb:uid" content="lifebooks-{user}-{title.replace(' ', '-').lower()}"/>
-  </head>
-  <docTitle>
-    <text>{title}</text>
-  </docTitle>
-  <navMap>
-    <navPoint id="navpoint-1" playOrder="1">
-      <navLabel>
-        <text>{title}</text>
-      </navLabel>
-      <content src="content.html"/>
-    </navPoint>
-  </navMap>
-</ncx>'''
-                epub.writestr('OEBPS/toc.ncx', toc_ncx)
-                
-                # Add content.html
-                content_html = f'''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml">
-<head>
-  <title>{title}</title>
-  <style type="text/css">
-    body {{ font-family: serif; margin: 1em; line-height: 1.6; }}
-    h1 {{ text-align: center; color: #2c3e50; }}
-    .author {{ text-align: center; color: #7f8c8d; font-style: italic; margin-bottom: 2em; }}
-    p {{ text-align: justify; margin-bottom: 1em; }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p class="author">by {author}</p>
-'''
-                
-                # Add content paragraphs
-                paragraphs = content.split('\n\n')
-                for para in paragraphs:
-                    if para.strip():
-                        content_html += f'  <p>{para.strip()}</p>\n'
-                
-                content_html += '''</body>
-</html>'''
-                epub.writestr('OEBPS/content.html', content_html)
-        
-        # Increment usage counter
-        increment_usage(user, "book")
-        
-        # In a real implementation, you would upload these files to cloud storage
-        # For now, we'll return success with file paths
-        result = {
-            "message": "Book publishing successful",
-            "title": title,
-            "author": author,
-            "format": format_type,
-            "files_created": []
-        }
-        
-        if format_type in ["pdf", "both"]:
-            result["files_created"].append({
-                "type": "pdf",
-                "filename": pdf_filename,
-                "path": pdf_path,
-                "download_url": f"/api/download/book/{pdf_filename}"
-            })
-        
-        if format_type in ["epub", "both"]:
-            result["files_created"].append({
-                "type": "epub", 
-                "filename": epub_filename,
-                "path": epub_path,
-                "download_url": f"/api/download/book/{epub_filename}"
-            })
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        return jsonify({
-            "message": "Book publishing failed",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/download/book/<filename>", methods=["GET"])
-def download_book(filename):
-    """Download generated book files"""
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-    
-    # In a real implementation, you would retrieve the file from cloud storage
-    # For now, return a placeholder response
-    return jsonify({
-        "message": "File download ready",
-        "filename": filename,
-        "note": "In production, this would serve the actual file from cloud storage"
-    }), 200
-
-# Stripe Payment Integration
-
-@app.route("/api/subscription/plans", methods=["GET"])
-def get_subscription_plans():
-    """Get available subscription plans"""
-    return jsonify({
-        "message": "Subscription plans retrieved successfully",
-        "plans": SUBSCRIPTION_PLANS
-    }), 200
-
-@app.route("/api/subscription/create-checkout-session", methods=["POST"])
-def create_checkout_session():
-    """Create Stripe checkout session for subscription"""
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    plan = data.get("plan")
-    
-    if plan not in SUBSCRIPTION_PLANS:
-        return jsonify({"message": "Invalid subscription plan"}), 400
-    
-    if plan == "free":
-        return jsonify({"message": "Free plan doesn't require payment"}), 400
-
-    try:
-        # Create or get Stripe customer
-        user_data = users.get(user)
-        stripe_customer_id = user_data.get("subscription", {}).get("stripe_customer_id")
-        
-        if not stripe_customer_id:
-            customer = stripe.Customer.create(
-                email=user,
-                metadata={"lifebooks_user": user}
-            )
-            stripe_customer_id = customer.id
-            users[user]["subscription"]["stripe_customer_id"] = stripe_customer_id
-
-        # Create checkout session
-        checkout_session = stripe.checkout.Session.create(
-            customer=stripe_customer_id,
-            payment_method_types=['card'],
-            line_items=[{
-                'price_data': {
-                    'currency': 'usd',
-                    'product_data': {
-                        'name': f'Lifebooks {SUBSCRIPTION_PLANS[plan]["name"]} Plan',
-                        'description': ', '.join(SUBSCRIPTION_PLANS[plan]["features"])
-                    },
-                    'unit_amount': SUBSCRIPTION_PLANS[plan]["price"],
-                    'recurring': {
-                        'interval': 'month'
-                    }
-                },
-                'quantity': 1,
-            }],
-            mode='subscription',
-            success_url=request.host_url + 'subscription/success?session_id={CHECKOUT_SESSION_ID}',
-            cancel_url=request.host_url + 'subscription/cancel',
-            metadata={
-                'user_email': user,
-                'plan': plan
-            }
-        )
-
-        return jsonify({
-            "message": "Checkout session created successfully",
-            "checkout_url": checkout_session.url,
-            "session_id": checkout_session.id
-        }), 200
-
-    except Exception as e:
-        return jsonify({
-            "message": "Failed to create checkout session",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/subscription/webhook", methods=["POST"])
-def stripe_webhook():
-    """Handle Stripe webhooks"""
-    payload = request.get_data()
-    sig_header = request.headers.get('Stripe-Signature')
-    
-    # In production, use your webhook secret
-    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET', 'whsec_test_secret')
-
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, endpoint_secret
-        )
-    except ValueError:
-        return jsonify({"error": "Invalid payload"}), 400
-    except stripe.error.SignatureVerificationError:
-        return jsonify({"error": "Invalid signature"}), 400
-
-    # Handle the event
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        user_email = session['metadata']['user_email']
-        plan = session['metadata']['plan']
-        
-        # Update user subscription
-        if user_email in users:
-            users[user_email]["subscription"].update({
-                "plan": plan,
-                "status": "active",
-                "stripe_subscription_id": session.get('subscription'),
-                "updated_at": datetime.datetime.utcnow().isoformat()
-            })
-
-    elif event['type'] == 'customer.subscription.deleted':
-        subscription = event['data']['object']
-        customer_id = subscription['customer']
-        
-        # Find user by customer ID and downgrade to free
-        for email, user_data in users.items():
-            if user_data.get("subscription", {}).get("stripe_customer_id") == customer_id:
-                users[email]["subscription"].update({
-                    "plan": "free",
-                    "status": "active",
-                    "stripe_subscription_id": None,
-                    "updated_at": datetime.datetime.utcnow().isoformat()
-                })
-                break
-
-    return jsonify({"status": "success"}), 200
-
-@app.route("/api/subscription/status", methods=["GET"])
-def get_subscription_status():
-    """Get current user's subscription status"""
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    user_data = users.get(user, {})
-    subscription = user_data.get("subscription", {})
-    usage = user_data.get("usage", {})
-    
-    # Reset monthly usage if needed
-    last_reset = datetime.datetime.fromisoformat(usage.get("last_reset", datetime.datetime.utcnow().isoformat()))
-    current_month = datetime.datetime.utcnow().replace(day=1)
-    
-    if last_reset < current_month:
-        usage.update({
-            "recordings_this_month": 0,
-            "ai_enhancements_this_month": 0,
-            "last_reset": current_month.isoformat()
-        })
-        users[user]["usage"] = usage
-
-    plan_name = subscription.get("plan", "free")
-    plan_info = SUBSCRIPTION_PLANS.get(plan_name, SUBSCRIPTION_PLANS["free"])
-
-    return jsonify({
-        "message": "Subscription status retrieved successfully",
-        "subscription": subscription,
-        "usage": usage,
-        "plan_info": plan_info,
-        "limits_reached": {
-            "recordings": plan_info["limits"]["recordings"] != -1 and usage["recordings_this_month"] >= plan_info["limits"]["recordings"],
-            "ai_enhancements": plan_info["limits"]["ai_enhancements"] != -1 and usage["ai_enhancements_this_month"] >= plan_info["limits"]["ai_enhancements"],
-            "books": plan_info["limits"]["books"] != -1 and usage["books_created"] >= plan_info["limits"]["books"]
-        }
-    }), 200
-
-@app.route("/api/subscription/cancel", methods=["POST"])
-def cancel_subscription():
-    """Cancel user's subscription"""
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    user_data = users.get(user, {})
-    subscription_id = user_data.get("subscription", {}).get("stripe_subscription_id")
-    
-    if not subscription_id:
-        return jsonify({"message": "No active subscription found"}), 400
-
-    try:
-        # Cancel the subscription in Stripe
-        stripe.Subscription.delete(subscription_id)
-        
-        # Update user data
-        users[user]["subscription"].update({
-            "plan": "free",
-            "status": "cancelled",
-            "stripe_subscription_id": None,
-            "updated_at": datetime.datetime.utcnow().isoformat()
-        })
-
-        return jsonify({
-            "message": "Subscription cancelled successfully"
-        }), 200
-
-    except Exception as e:
-        return jsonify({
-            "message": "Failed to cancel subscription",
-            "error": str(e)
-        }), 500
-
-def check_usage_limits(user, action_type):
-    """Check if user has reached usage limits for their plan"""
-    user_data = users.get(user, {})
-    subscription = user_data.get("subscription", {})
-    usage = user_data.get("usage", {})
-    
-    plan_name = subscription.get("plan", "free")
-    plan_info = SUBSCRIPTION_PLANS.get(plan_name, SUBSCRIPTION_PLANS["free"])
-    
-    limits = plan_info["limits"]
-    
-    if action_type == "recording":
-        if limits["recordings"] != -1 and usage.get("recordings_this_month", 0) >= limits["recordings"]:
-            return False, f"Monthly recording limit reached ({limits['recordings']}). Upgrade to Pro for unlimited recordings."
-    
-    elif action_type == "ai_enhancement":
-        if limits["ai_enhancements"] != -1 and usage.get("ai_enhancements_this_month", 0) >= limits["ai_enhancements"]:
-            return False, f"Monthly AI enhancement limit reached ({limits['ai_enhancements']}). Upgrade to Pro for unlimited enhancements."
-    
-    elif action_type == "book":
-        if limits["books"] != -1 and usage.get("books_created", 0) >= limits["books"]:
-            return False, f"Book creation limit reached ({limits['books']}). Upgrade to Pro for unlimited books."
-    
-    return True, None
-
-def increment_usage(user, action_type):
-    """Increment usage counter for user"""
-    if user not in users:
-        return
-    
-    usage = users[user].get("usage", {})
-    
-    if action_type == "recording":
-        usage["recordings_this_month"] = usage.get("recordings_this_month", 0) + 1
-    elif action_type == "ai_enhancement":
-        usage["ai_enhancements_this_month"] = usage.get("ai_enhancements_this_month", 0) + 1
-    elif action_type == "book":
-        usage["books_created"] = usage.get("books_created", 0) + 1
-    
-    users[user]["usage"] = usage
-
-if __name__ == "__main__":
-    app.run(debug=True)
-
-
-# Story Management
-@app.route("/api/story", methods=["POST"])
-def create_story():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    title = data.get("title", "")
-    content = data.get("content", "")
-    
-    if not title:
-        return jsonify({"message": "Story title is required"}), 400
-
-    try:
-        story = Story(
-            user_id=user.id,
-            title=title,
-            content=content
-        )
-        story.update_word_count()
-        
-        db.session.add(story)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Story created successfully",
-            "story": story.to_dict()
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "message": "Story creation failed",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/story/<int:story_id>", methods=["GET"])
-def get_story(story_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
-    if not story:
-        return jsonify({"message": "Story not found"}), 404
-
-    return jsonify({"story": story.to_dict()}), 200
-
-@app.route("/api/story/<int:story_id>", methods=["PUT"])
-def update_story(story_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
-    if not story:
-        return jsonify({"message": "Story not found"}), 404
-
-    data = request.get_json()
-    
-    try:
-        if "title" in data:
-            story.title = data["title"]
-        if "content" in data:
-            story.content = data["content"]
-            story.update_word_count()
-        if "summary" in data:
-            story.summary = data["summary"]
-        if "tags" in data:
-            story.set_tags_list(data["tags"])
-        
-        story.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Story updated successfully",
-            "story": story.to_dict()
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "message": "Story update failed",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/story/<int:story_id>/auto-save", methods=["POST"])
-def auto_save_story(story_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
-    if not story:
-        return jsonify({"message": "Story not found"}), 404
-
-    data = request.get_json()
-    content = data.get("content", "")
-    
-    try:
-        story.auto_save_content(content)
-        
-        return jsonify({
-            "message": "Auto-save successful",
-            "last_auto_save": story.last_auto_save.isoformat()
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "message": "Auto-save failed",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/stories", methods=["GET"])
-def get_user_stories():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    stories = Story.query.filter_by(user_id=user.id).order_by(Story.updated_at.desc()).all()
-    
-    return jsonify({
-        "stories": [story.to_dict() for story in stories]
-    }), 200
+# Health check
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}), 200
 
 # Database initialization
 @app.before_first_request
@@ -1095,371 +358,4 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(host="0.0.0.0", port=5000, debug=True)
-
-
-# Import interview models
-from interview_models import InterviewSession, InterviewQuestion, InterviewResponse
-
-# AI Interviewer System
-@app.route("/api/interview/start", methods=["POST"])
-def start_interview():
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    data = request.get_json()
-    topic = data.get("topic", "")
-    
-    if not topic:
-        return jsonify({"message": "Interview topic is required"}), 400
-
-    try:
-        # Create new interview session
-        session = InterviewSession(
-            user_id=user.id,
-            topic=topic,
-            session_type='trial' if user.subscription_plan == 'trial' else 'full',
-            total_questions=5 if user.subscription_plan == 'trial' else 20
-        )
-        
-        db.session.add(session)
-        db.session.commit()
-        
-        # Generate first question
-        first_question = generate_interview_question(session, 1, topic)
-        
-        return jsonify({
-            "message": "Interview session started",
-            "session": session.to_dict(),
-            "first_question": first_question.to_dict()
-        }), 201
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "message": "Failed to start interview",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/interview/<int:session_id>/question", methods=["GET"])
-def get_current_question(session_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
-    if not session:
-        return jsonify({"message": "Interview session not found"}), 404
-
-    # Get current question
-    current_question = InterviewQuestion.query.filter_by(
-        session_id=session_id, 
-        question_number=session.current_question + 1
-    ).first()
-    
-    if not current_question:
-        return jsonify({"message": "No more questions available"}), 404
-
-    return jsonify({
-        "question": current_question.to_dict(),
-        "session": session.to_dict()
-    }), 200
-
-@app.route("/api/interview/<int:session_id>/respond", methods=["POST"])
-def submit_response(session_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
-    if not session:
-        return jsonify({"message": "Interview session not found"}), 404
-
-    data = request.get_json()
-    response_text = data.get("response", "")
-    question_id = data.get("question_id")
-    
-    if not response_text or not question_id:
-        return jsonify({"message": "Response text and question ID are required"}), 400
-
-    try:
-        # Create response record
-        response = InterviewResponse(
-            session_id=session_id,
-            question_id=question_id,
-            response_text=response_text
-        )
-        response.update_word_count()
-        
-        # Analyze response with AI
-        analysis = analyze_response_with_ai(response_text)
-        response.sentiment = analysis.get('sentiment')
-        response.set_key_themes(analysis.get('themes', []))
-        response.set_follow_up_suggestions(analysis.get('follow_ups', []))
-        
-        db.session.add(response)
-        
-        # Update session progress
-        session.questions_completed += 1
-        session.current_question += 1
-        session.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        
-        # Check if interview is complete
-        if session.questions_completed >= session.total_questions:
-            session.status = 'completed'
-            session.completed_at = datetime.datetime.now(datetime.timezone.utc)
-            
-            db.session.commit()
-            
-            return jsonify({
-                "message": "Interview completed!",
-                "session": session.to_dict(),
-                "response": response.to_dict(),
-                "completed": True,
-                "next_step": "generate_pdf" if user.subscription_plan == 'trial' else "view_story"
-            }), 200
-        
-        # Generate next question
-        next_question = generate_interview_question(
-            session, 
-            session.current_question + 1, 
-            session.topic,
-            context=response_text
-        )
-        
-        db.session.commit()
-        
-        return jsonify({
-            "message": "Response recorded successfully",
-            "response": response.to_dict(),
-            "next_question": next_question.to_dict(),
-            "session": session.to_dict()
-        }), 200
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({
-            "message": "Failed to record response",
-            "error": str(e)
-        }), 500
-
-@app.route("/api/interview/<int:session_id>/pdf", methods=["GET"])
-def generate_trial_pdf(session_id):
-    user = get_user_from_token(request)
-    if not user:
-        return jsonify({"message": "Authentication required"}), 401
-
-    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
-    if not session:
-        return jsonify({"message": "Interview session not found"}), 404
-
-    if session.status != 'completed':
-        return jsonify({"message": "Interview must be completed first"}), 400
-
-    try:
-        # Generate PDF from interview responses
-        pdf_content = create_interview_pdf(session)
-        
-        return send_file(
-            io.BytesIO(pdf_content),
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'lifebooks_trial_{session.topic.replace(" ", "_")}.pdf'
-        )
-        
-    except Exception as e:
-        return jsonify({
-            "message": "Failed to generate PDF",
-            "error": str(e)
-        }), 500
-
-def generate_interview_question(session, question_number, topic, context=None):
-    """Generate AI-powered interview question"""
-    try:
-        # Base prompts for different question numbers
-        prompts = {
-            1: f"Generate a warm, welcoming opening question to start someone talking about '{topic}'. Make it personal and inviting.",
-            2: f"Based on the topic '{topic}', ask a question that helps explore the emotions and feelings involved.",
-            3: f"Create a question that digs deeper into specific details and memories about '{topic}'.",
-            4: f"Ask about the impact or significance of '{topic}' in their life.",
-            5: f"Generate a reflective closing question about '{topic}' that helps them think about lessons learned or advice they'd give."
-        }
-        
-        base_prompt = prompts.get(question_number, f"Generate a thoughtful question about '{topic}'.")
-        
-        if context:
-            prompt = f"{base_prompt}\n\nContext from their previous response: {context[:200]}...\n\nGenerate a follow-up question that builds on what they shared."
-        else:
-            prompt = base_prompt
-        
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a compassionate interviewer helping people tell their life stories. Ask warm, thoughtful questions that encourage detailed, personal responses. Keep questions conversational and not too formal."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
-        
-        question_text = response.choices[0].message.content.strip()
-        
-        # Create question record
-        question = InterviewQuestion(
-            session_id=session.id,
-            question_number=question_number,
-            question_text=question_text,
-            context=context,
-            generation_prompt=prompt,
-            asked_at=datetime.datetime.now(datetime.timezone.utc)
-        )
-        
-        db.session.add(question)
-        db.session.commit()
-        
-        return question
-        
-    except Exception as e:
-        # Fallback questions if AI fails
-        fallback_questions = {
-            1: f"Tell me about a memorable moment related to {topic}. What made it special?",
-            2: f"How did {topic} make you feel, and why was it important to you?",
-            3: f"Can you describe the details of that experience with {topic}?",
-            4: f"What impact did {topic} have on your life or the lives of others?",
-            5: f"Looking back at {topic}, what would you want others to know or learn from your experience?"
-        }
-        
-        question_text = fallback_questions.get(question_number, f"Tell me more about {topic}.")
-        
-        question = InterviewQuestion(
-            session_id=session.id,
-            question_number=question_number,
-            question_text=question_text,
-            context=context,
-            asked_at=datetime.datetime.now(datetime.timezone.utc)
-        )
-        
-        db.session.add(question)
-        db.session.commit()
-        
-        return question
-
-def analyze_response_with_ai(response_text):
-    """Analyze user response for sentiment and themes"""
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Analyze the following personal story response. Identify: 1) Sentiment (positive/neutral/negative), 2) Key themes (max 3), 3) Potential follow-up questions (max 2). Respond in JSON format."},
-                {"role": "user", "content": f"Analyze this response: {response_text}"}
-            ],
-            max_tokens=200,
-            temperature=0.3
-        )
-        
-        analysis_text = response.choices[0].message.content.strip()
-        
-        # Try to parse JSON response
-        try:
-            import json
-            analysis = json.loads(analysis_text)
-            return analysis
-        except:
-            # Fallback if JSON parsing fails
-            return {
-                "sentiment": "neutral",
-                "themes": ["personal experience"],
-                "follow_ups": ["Can you tell me more about that?"]
-            }
-            
-    except Exception as e:
-        return {
-            "sentiment": "neutral",
-            "themes": ["personal story"],
-            "follow_ups": ["What happened next?"]
-        }
-
-def create_interview_pdf(session):
-    """Create PDF from interview session"""
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    
-    # Create PDF buffer
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=1*inch)
-    
-    # Get styles
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'CustomTitle',
-        parent=styles['Heading1'],
-        fontSize=24,
-        spaceAfter=30,
-        textColor='#2c3e50'
-    )
-    
-    # Build PDF content
-    story = []
-    
-    # Title
-    story.append(Paragraph(f"Your Life Story: {session.topic}", title_style))
-    story.append(Spacer(1, 20))
-    
-    # Introduction
-    intro_text = """
-    Thank you for sharing your story with Lifebooks! Below are your responses to our AI interviewer. 
-    This is just the beginning - upgrade to Lifebooks Pro to continue building your complete life story 
-    with unlimited interviews, voice recordings, and professional book creation.
-    """
-    story.append(Paragraph(intro_text, styles['Normal']))
-    story.append(Spacer(1, 30))
-    
-    # Get questions and responses
-    questions = InterviewQuestion.query.filter_by(session_id=session.id).order_by(InterviewQuestion.question_number).all()
-    responses = InterviewResponse.query.filter_by(session_id=session.id).all()
-    
-    # Create response lookup
-    response_lookup = {r.question_id: r for r in responses}
-    
-    # Add Q&A pairs
-    for question in questions:
-        # Question
-        story.append(Paragraph(f"<b>Q{question.question_number}:</b> {question.question_text}", styles['Heading3']))
-        story.append(Spacer(1, 10))
-        
-        # Response
-        response = response_lookup.get(question.id)
-        if response:
-            story.append(Paragraph(response.response_text, styles['Normal']))
-        else:
-            story.append(Paragraph("<i>No response recorded</i>", styles['Italic']))
-        
-        story.append(Spacer(1, 20))
-    
-    # Call to action
-    cta_text = """
-    <b>Ready to continue your story?</b><br/><br/>
-    Upgrade to Lifebooks Pro (€10/month) to unlock:
-    • Unlimited AI interviews with personalized questions
-    • Voice recording and transcription
-    • AI-powered text enhancement
-    • Professional book covers and formatting
-    • PDF and Kindle book creation
-    • Family sharing and collaboration
-    
-    Visit lifebooks.ai to upgrade and continue building your legacy!
-    """
-    story.append(Spacer(1, 30))
-    story.append(Paragraph(cta_text, styles['Normal']))
-    
-    # Build PDF
-    doc.build(story)
-    
-    # Get PDF content
-    pdf_content = buffer.getvalue()
-    buffer.close()
-    
-    return pdf_content
 

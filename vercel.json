@@ -26,7 +26,12 @@
     }
   ],
   "env": {
-    "FLASK_ENV": "production"
+    "FLASK_ENV": "production",
+    "OPENAI_API_KEY": "@openai_api_key",
+    "STRIPE_PUBLISHABLE_KEY": "@stripe_publishable_key", 
+    "STRIPE_SECRET_KEY": "@stripe_secret_key",
+    "DATABASE_URL": "@database_url",
+    "JWT_SECRET_KEY": "@jwt_secret_key"
   }
 }
 
