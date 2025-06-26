@@ -1,5 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import jwt
 import datetime
 import os
@@ -8,6 +10,12 @@ import tempfile
 import io
 import stripe
 from werkzeug.utils import secure_filename
+from models import db, User, Story, VoiceRecording, AutoSave, DataBackup
+import json
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -16,39 +24,66 @@ CORS(app)  # Enable CORS for all routes
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "your_super_secret_key")
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50MB max file size
 
+# Database configuration
+database_url = os.environ.get("DATABASE_URL")
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = database_url or "postgresql://localhost/lifebooks_db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Initialize database
+db.init_app(app)
+migrate = Migrate(app, db)
+
 # OpenAI API configuration
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # Stripe API configuration
 stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
 
-# In-memory user store (for MVP purposes)
-users = {}
-
-# In-memory story store (for MVP purposes)
-stories = {}
-
 # Subscription plans
 SUBSCRIPTION_PLANS = {
-    "free": {
-        "name": "Free",
+    "trial": {
+        "name": "Free Trial",
         "price": 0,
-        "features": ["5 voice recordings per month", "Basic AI enhancement", "1 book export"],
-        "limits": {"recordings": 5, "books": 1, "ai_enhancements": 10}
+        "features": ["5 AI interview questions", "Sample PDF generation", "Preview experience"],
+        "limits": {"interviews": 5, "recordings": 0, "ai_enhancements": 0, "books": 1}
     },
     "pro": {
-        "name": "Pro",
-        "price": 1999,  # $19.99 in cents
-        "stripe_price_id": "price_pro_monthly",  # Will be created in Stripe
-        "features": ["Unlimited voice recordings", "Advanced AI enhancement", "Unlimited book exports", "Custom book covers"],
-        "limits": {"recordings": -1, "books": -1, "ai_enhancements": -1}
+        "name": "Lifebooks Pro",
+        "price": 1000,  # €10.00 in cents
+        "stripe_price_id": "price_pro_monthly",
+        "features": ["Unlimited AI interviews", "Unlimited voice recordings", "Unlimited AI enhancement", "Basic PDF/EPUB export", "Cloud storage & auto-save"],
+        "limits": {"interviews": -1, "recordings": -1, "ai_enhancements": -1, "books": -1}
+    }
+}
+
+# Pay-per-service add-ons
+ADDON_SERVICES = {
+    "professional_printing": {
+        "name": "Professional Printing",
+        "base_price": 1500,  # €15.00 base price
+        "price_tiers": {
+            "basic": {"price": 1500, "description": "Standard paperback (100-200 pages)"},
+            "premium": {"price": 3000, "description": "Hardcover with dust jacket (100-300 pages)"},
+            "deluxe": {"price": 5000, "description": "Premium hardcover with photo inserts (unlimited pages)"}
+        }
     },
-    "enterprise": {
-        "name": "Enterprise", 
-        "price": 4999,  # $49.99 in cents
-        "stripe_price_id": "price_enterprise_monthly",
-        "features": ["Everything in Pro", "Priority support", "Custom branding", "API access"],
-        "limits": {"recordings": -1, "books": -1, "ai_enhancements": -1}
+    "amazon_publishing": {
+        "name": "Amazon KDP Publishing Service",
+        "price": 2500,  # €25.00
+        "description": "Professional formatting, cover optimization, and upload assistance"
+    },
+    "premium_covers": {
+        "name": "Premium AI Book Covers",
+        "price": 1000,  # €10.00 per cover
+        "description": "Custom AI-generated covers with multiple revisions"
+    },
+    "family_sharing": {
+        "name": "Family Sharing",
+        "price": 500,  # €5.00 per month
+        "description": "Multiple family members can contribute to stories"
     }
 }
 
@@ -60,15 +95,17 @@ def allowed_audio_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO_EXTENSIONS
 
 def get_user_from_token(request):
-    """Extract user from JWT token"""
-    token = request.headers.get("Authorization")
-    if not token:
+    """Extract and validate user from JWT token"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
         return None
-    
+
+    token = auth_header.split(" ")[1]
     try:
-        token = token.split(" ")[1]  # Remove "Bearer " prefix
         data = jwt.decode(token, app.config["SECRET_KEY"], algorithms=["HS256"])
-        return data["user"]
+        email = data["user"]
+        user = User.query.filter_by(email=email, is_active=True).first()
+        return user
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, IndexError):
         return None
 
@@ -81,27 +118,31 @@ def register():
     if not email or not password:
         return jsonify({"message": "Email and password are required"}), 400
 
-    if email in users:
+    if len(password) < 6:
+        return jsonify({"message": "Password must be at least 6 characters long"}), 400
+
+    # Check if user already exists
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
         return jsonify({"message": "User already exists"}), 409
 
-    # Create user with free subscription by default
-    users[email] = {
-        "password": password,  # In real app, hash the password!
-        "subscription": {
-            "plan": "free",
-            "status": "active",
-            "created_at": datetime.datetime.utcnow().isoformat(),
-            "stripe_customer_id": None,
-            "stripe_subscription_id": None
-        },
-        "usage": {
-            "recordings_this_month": 0,
-            "books_created": 0,
-            "ai_enhancements_this_month": 0,
-            "last_reset": datetime.datetime.utcnow().replace(day=1).isoformat()
-        }
-    }
-    return jsonify({"message": "User registered successfully"}), 201
+    try:
+        # Create new user with trial subscription
+        user = User(
+            email=email,
+            subscription_plan='trial',
+            subscription_status='active'
+        )
+        user.set_password(password)
+        
+        db.session.add(user)
+        db.session.commit()
+        
+        return jsonify({"message": "User registered successfully"}), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": "Registration failed", "error": str(e)}), 500
 
 @app.route("/api/login", methods=["POST"])
 def login():
@@ -112,21 +153,34 @@ def login():
     if not email or not password:
         return jsonify({"message": "Email and password are required"}), 400
 
-    user = users.get(email)
-    if not user or user["password"] != password:
-        return jsonify({"message": "Invalid credentials"}), 401
+    try:
+        # Find user in database
+        user = User.query.filter_by(email=email).first()
+        
+        if not user or not user.check_password(password):
+            return jsonify({"message": "Invalid email or password"}), 401
 
-    # Generate JWT token
-    token = jwt.encode({
-        "user": email,
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
-    }, app.config["SECRET_KEY"], algorithm="HS256")
+        if not user.is_active:
+            return jsonify({"message": "Account is deactivated"}), 401
 
-    return jsonify({
-        "message": "Login successful",
-        "token": token,
-        "user": {"email": email}
-    }), 200
+        # Update last login
+        user.last_login = datetime.datetime.now(datetime.timezone.utc)
+        db.session.commit()
+
+        # Generate JWT token
+        token = jwt.encode({
+            "user": email,
+            "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+        }, app.config["SECRET_KEY"], algorithm="HS256")
+
+        return jsonify({
+            "message": "Login successful",
+            "token": token,
+            "user": user.to_dict()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"message": "Login failed", "error": str(e)}), 500
 
 @app.route("/api/protected", methods=["GET"])
 def protected():
@@ -146,7 +200,7 @@ def transcribe_voice():
         return jsonify({"message": "Authentication required"}), 401
 
     # Check usage limits
-    can_use, limit_message = check_usage_limits(user, "recording")
+    can_use, limit_message = user.check_usage_limit("recording")
     if not can_use:
         return jsonify({"message": limit_message}), 403
 
@@ -163,9 +217,20 @@ def transcribe_voice():
         return jsonify({"message": "Invalid audio file format. Supported: mp3, wav, mp4, m4a, webm, flac"}), 400
 
     try:
+        # Create voice recording record
+        recording = VoiceRecording(
+            user_id=user.id,
+            filename=secure_filename(audio_file.filename),
+            format=audio_file.filename.rsplit('.', 1)[1].lower(),
+            processing_status='processing'
+        )
+        db.session.add(recording)
+        db.session.commit()
+
         # Create a temporary file to store the uploaded audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{audio_file.filename.rsplit('.', 1)[1].lower()}") as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{recording.format}") as temp_file:
             audio_file.save(temp_file.name)
+            recording.file_path = temp_file.name
             
             # Use OpenAI Whisper API for transcription
             with open(temp_file.name, "rb") as audio_data:
@@ -175,22 +240,36 @@ def transcribe_voice():
                     response_format="text"
                 )
             
+            # Update recording with transcript
+            recording.transcript = transcript
+            recording.processing_status = 'completed'
+            recording.processed_at = datetime.datetime.now(datetime.timezone.utc)
+            
             # Clean up temporary file
             os.unlink(temp_file.name)
             
             # Increment usage counter
-            increment_usage(user, "recording")
+            user.increment_usage("recording")
+            
+            db.session.commit()
             
             return jsonify({
                 "message": "Transcription successful",
                 "transcript": transcript,
-                "user": user
+                "recording_id": recording.id,
+                "user": user.email
             }), 200
             
     except Exception as e:
+        # Clean up and mark as failed
+        if 'recording' in locals():
+            recording.processing_status = 'failed'
+            db.session.commit()
+        
         # Clean up temporary file if it exists
         try:
-            os.unlink(temp_file.name)
+            if 'temp_file' in locals():
+                os.unlink(temp_file.name)
         except:
             pass
             
@@ -207,7 +286,7 @@ def enhance_text():
         return jsonify({"message": "Authentication required"}), 401
 
     # Check usage limits
-    can_use, limit_message = check_usage_limits(user, "ai_enhancement")
+    can_use, limit_message = user.check_usage_limit("ai_enhancement")
     if not can_use:
         return jsonify({"message": limit_message}), 403
 
@@ -242,7 +321,7 @@ def enhance_text():
         enhanced_text = response.choices[0].message.content.strip()
         
         # Increment usage counter
-        increment_usage(user, "ai_enhancement")
+        user.increment_usage("ai_enhancement")
         
         return jsonify({
             "message": "Text enhancement successful",
@@ -404,31 +483,236 @@ def publish_book():
     data = request.get_json()
     title = data.get("title", "")
     content = data.get("content", "")
+    author = data.get("author", user)
     format_type = data.get("format", "pdf")  # pdf, epub, both
+    cover_image_url = data.get("cover_image_url", "")
     
     if not title or not content:
         return jsonify({"message": "Title and content are required"}), 400
 
     try:
-        # For now, return a success message indicating the feature is implemented
-        # In a full implementation, you would generate actual PDF/EPUB files
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Image
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+        import requests
+        from io import BytesIO
+        
+        # Create a temporary directory for the book files
+        book_dir = tempfile.mkdtemp()
+        
+        if format_type in ["pdf", "both"]:
+            # Generate PDF
+            pdf_filename = f"{title.replace(' ', '_')}.pdf"
+            pdf_path = os.path.join(book_dir, pdf_filename)
+            
+            # Create PDF document
+            doc = SimpleDocTemplate(pdf_path, pagesize=A4,
+                                  rightMargin=72, leftMargin=72,
+                                  topMargin=72, bottomMargin=18)
+            
+            # Get styles
+            styles = getSampleStyleSheet()
+            
+            # Create custom styles
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                spaceAfter=30,
+                alignment=TA_CENTER,
+                textColor='#2c3e50'
+            )
+            
+            author_style = ParagraphStyle(
+                'CustomAuthor',
+                parent=styles['Normal'],
+                fontSize=14,
+                spaceAfter=30,
+                alignment=TA_CENTER,
+                textColor='#7f8c8d'
+            )
+            
+            content_style = ParagraphStyle(
+                'CustomContent',
+                parent=styles['Normal'],
+                fontSize=12,
+                spaceAfter=12,
+                alignment=TA_JUSTIFY,
+                leftIndent=0,
+                rightIndent=0
+            )
+            
+            # Build PDF content
+            story = []
+            
+            # Add cover image if provided
+            if cover_image_url:
+                try:
+                    response = requests.get(cover_image_url)
+                    img_data = BytesIO(response.content)
+                    img = Image(img_data, width=4*inch, height=6*inch)
+                    img.hAlign = 'CENTER'
+                    story.append(img)
+                    story.append(Spacer(1, 0.5*inch))
+                except:
+                    pass  # Skip if image can't be loaded
+            
+            # Add title and author
+            story.append(Paragraph(title, title_style))
+            story.append(Paragraph(f"by {author}", author_style))
+            story.append(PageBreak())
+            
+            # Add content (split by paragraphs)
+            paragraphs = content.split('\n\n')
+            for para in paragraphs:
+                if para.strip():
+                    story.append(Paragraph(para.strip(), content_style))
+                    story.append(Spacer(1, 12))
+            
+            # Build PDF
+            doc.build(story)
+        
+        if format_type in ["epub", "both"]:
+            # Generate EPUB (simplified version)
+            epub_filename = f"{title.replace(' ', '_')}.epub"
+            epub_path = os.path.join(book_dir, epub_filename)
+            
+            # Create a simple EPUB structure
+            import zipfile
+            
+            with zipfile.ZipFile(epub_path, 'w', zipfile.ZIP_DEFLATED) as epub:
+                # Add mimetype
+                epub.writestr('mimetype', 'application/epub+zip')
+                
+                # Add META-INF/container.xml
+                container_xml = '''<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>'''
+                epub.writestr('META-INF/container.xml', container_xml)
+                
+                # Add content.opf
+                content_opf = f'''<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+    <dc:title>{title}</dc:title>
+    <dc:creator>{author}</dc:creator>
+    <dc:identifier id="BookId">lifebooks-{user}-{title.replace(' ', '-').lower()}</dc:identifier>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    <item id="content" href="content.html" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine toc="ncx">
+    <itemref idref="content"/>
+  </spine>
+</package>'''
+                epub.writestr('OEBPS/content.opf', content_opf)
+                
+                # Add toc.ncx
+                toc_ncx = f'''<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="lifebooks-{user}-{title.replace(' ', '-').lower()}"/>
+  </head>
+  <docTitle>
+    <text>{title}</text>
+  </docTitle>
+  <navMap>
+    <navPoint id="navpoint-1" playOrder="1">
+      <navLabel>
+        <text>{title}</text>
+      </navLabel>
+      <content src="content.html"/>
+    </navPoint>
+  </navMap>
+</ncx>'''
+                epub.writestr('OEBPS/toc.ncx', toc_ncx)
+                
+                # Add content.html
+                content_html = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <title>{title}</title>
+  <style type="text/css">
+    body {{ font-family: serif; margin: 1em; line-height: 1.6; }}
+    h1 {{ text-align: center; color: #2c3e50; }}
+    .author {{ text-align: center; color: #7f8c8d; font-style: italic; margin-bottom: 2em; }}
+    p {{ text-align: justify; margin-bottom: 1em; }}
+  </style>
+</head>
+<body>
+  <h1>{title}</h1>
+  <p class="author">by {author}</p>
+'''
+                
+                # Add content paragraphs
+                paragraphs = content.split('\n\n')
+                for para in paragraphs:
+                    if para.strip():
+                        content_html += f'  <p>{para.strip()}</p>\n'
+                
+                content_html += '''</body>
+</html>'''
+                epub.writestr('OEBPS/content.html', content_html)
         
         # Increment usage counter
         increment_usage(user, "book")
         
-        return jsonify({
+        # In a real implementation, you would upload these files to cloud storage
+        # For now, we'll return success with file paths
+        result = {
             "message": "Book publishing successful",
             "title": title,
+            "author": author,
             "format": format_type,
-            "download_url": f"/api/download/book/{user}_{title.replace(' ', '_')}.{format_type}",
-            "note": "PDF/EPUB generation is implemented and ready for file creation"
-        }), 200
+            "files_created": []
+        }
+        
+        if format_type in ["pdf", "both"]:
+            result["files_created"].append({
+                "type": "pdf",
+                "filename": pdf_filename,
+                "path": pdf_path,
+                "download_url": f"/api/download/book/{pdf_filename}"
+            })
+        
+        if format_type in ["epub", "both"]:
+            result["files_created"].append({
+                "type": "epub", 
+                "filename": epub_filename,
+                "path": epub_path,
+                "download_url": f"/api/download/book/{epub_filename}"
+            })
+        
+        return jsonify(result), 200
         
     except Exception as e:
         return jsonify({
             "message": "Book publishing failed",
             "error": str(e)
         }), 500
+
+@app.route("/api/download/book/<filename>", methods=["GET"])
+def download_book(filename):
+    """Download generated book files"""
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    # In a real implementation, you would retrieve the file from cloud storage
+    # For now, return a placeholder response
+    return jsonify({
+        "message": "File download ready",
+        "filename": filename,
+        "note": "In production, this would serve the actual file from cloud storage"
+    }), 200
 
 # Stripe Payment Integration
 
@@ -674,4 +958,141 @@ def increment_usage(user, action_type):
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
+# Story Management
+@app.route("/api/story", methods=["POST"])
+def create_story():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    data = request.get_json()
+    title = data.get("title", "")
+    content = data.get("content", "")
+    
+    if not title:
+        return jsonify({"message": "Story title is required"}), 400
+
+    try:
+        story = Story(
+            user_id=user.id,
+            title=title,
+            content=content
+        )
+        story.update_word_count()
+        
+        db.session.add(story)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Story created successfully",
+            "story": story.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": "Story creation failed",
+            "error": str(e)
+        }), 500
+
+@app.route("/api/story/<int:story_id>", methods=["GET"])
+def get_story(story_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
+    if not story:
+        return jsonify({"message": "Story not found"}), 404
+
+    return jsonify({"story": story.to_dict()}), 200
+
+@app.route("/api/story/<int:story_id>", methods=["PUT"])
+def update_story(story_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
+    if not story:
+        return jsonify({"message": "Story not found"}), 404
+
+    data = request.get_json()
+    
+    try:
+        if "title" in data:
+            story.title = data["title"]
+        if "content" in data:
+            story.content = data["content"]
+            story.update_word_count()
+        if "summary" in data:
+            story.summary = data["summary"]
+        if "tags" in data:
+            story.set_tags_list(data["tags"])
+        
+        story.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Story updated successfully",
+            "story": story.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": "Story update failed",
+            "error": str(e)
+        }), 500
+
+@app.route("/api/story/<int:story_id>/auto-save", methods=["POST"])
+def auto_save_story(story_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    story = Story.query.filter_by(id=story_id, user_id=user.id).first()
+    if not story:
+        return jsonify({"message": "Story not found"}), 404
+
+    data = request.get_json()
+    content = data.get("content", "")
+    
+    try:
+        story.auto_save_content(content)
+        
+        return jsonify({
+            "message": "Auto-save successful",
+            "last_auto_save": story.last_auto_save.isoformat()
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "message": "Auto-save failed",
+            "error": str(e)
+        }), 500
+
+@app.route("/api/stories", methods=["GET"])
+def get_user_stories():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    stories = Story.query.filter_by(user_id=user.id).order_by(Story.updated_at.desc()).all()
+    
+    return jsonify({
+        "stories": [story.to_dict() for story in stories]
+    }), 200
+
+# Database initialization
+@app.before_first_request
+def create_tables():
+    db.create_all()
+
+if __name__ == "__main__":
+    with app.app_context():
+        db.create_all()
+    app.run(host="0.0.0.0", port=5000, debug=True)
 
