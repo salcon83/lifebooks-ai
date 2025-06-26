@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "lifebooks-backend/src/main.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "lifebooks-frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "build" }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "lifebooks-backend/src/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "lifebooks-frontend/build/$1"
+    }
+  ],
+  "env": {
+    "FLASK_ENV": "production"
+  }
+}
+
