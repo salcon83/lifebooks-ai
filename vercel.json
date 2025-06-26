@@ -2,11 +2,8 @@
   "version": 2,
   "builds": [
     {
-      "src": "lifebooks-backend/src/wsgi.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb"
-      }
+      "src": "lifebooks-backend/src/main.py",
+      "use": "@vercel/python"
     },
     {
       "src": "lifebooks-frontend/package.json",
@@ -17,21 +14,12 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "lifebooks-backend/src/wsgi.py",
-      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      "dest": "lifebooks-backend/src/main.py"
     },
     {
       "src": "/(.*)",
       "dest": "lifebooks-frontend/build/$1"
     }
-  ],
-  "env": {
-    "FLASK_ENV": "production",
-    "OPENAI_API_KEY": "@openai_api_key",
-    "STRIPE_PUBLISHABLE_KEY": "@stripe_publishable_key", 
-    "STRIPE_SECRET_KEY": "@stripe_secret_key",
-    "DATABASE_URL": "@database_url",
-    "JWT_SECRET_KEY": "@jwt_secret_key"
-  }
+  ]
 }
 
