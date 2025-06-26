@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 
 const StoryEditor = ({ user }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [story, setStory] = useState({ title: '', content: '' });
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (id) {
       // Load existing story
       // For now, we'll just set a placeholder
-      setStory({ title: 'My Story', content: 'Start writing your story here...' });
+      setStory({
+        title: 'My Story',
+        content: 'Start writing your story here...'
+      });
     }
   }, [id]);
 
@@ -35,11 +36,15 @@ const StoryEditor = ({ user }) => {
         <button onClick={() => navigate('/dashboard')} className="btn btn-secondary">
           ← Back to Dashboard
         </button>
-        <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
+        <button
+          onClick={handleSave}
+          className="btn btn-primary"
+          disabled={saving}
+        >
           {saving ? 'Saving...' : 'Save Story'}
         </button>
       </div>
-      
+
       <div className="editor-content">
         <input
           type="text"
@@ -62,7 +67,6 @@ const StoryEditor = ({ user }) => {
           background: #f8fafc;
           padding: 20px;
         }
-
         .editor-header {
           display: flex;
           justify-content: space-between;
@@ -71,7 +75,6 @@ const StoryEditor = ({ user }) => {
           margin-left: auto;
           margin-right: auto;
         }
-
         .editor-content {
           max-width: 800px;
           margin: 0 auto;
@@ -80,7 +83,6 @@ const StoryEditor = ({ user }) => {
           padding: 40px;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
-
         .title-input {
           width: 100%;
           border: none;
@@ -90,11 +92,9 @@ const StoryEditor = ({ user }) => {
           padding: 0;
           background: transparent;
         }
-
         .title-input:focus {
           outline: none;
         }
-
         .content-textarea {
           width: 100%;
           min-height: 500px;
@@ -104,7 +104,6 @@ const StoryEditor = ({ user }) => {
           resize: vertical;
           background: transparent;
         }
-
         .content-textarea:focus {
           outline: none;
         }
@@ -114,4 +113,3 @@ const StoryEditor = ({ user }) => {
 };
 
 export default StoryEditor;
-
