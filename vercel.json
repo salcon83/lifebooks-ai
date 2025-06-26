@@ -1,10 +1,11 @@
 {
   "version": 2,
+  "functions": {
+    "lifebooks-backend/src/main.py": {
+      "runtime": "python3.9"
+    }
+  },
   "builds": [
-    {
-      "src": "lifebooks-backend/src/main.py",
-      "use": "@vercel/python"
-    },
     {
       "src": "lifebooks-frontend/package.json",
       "use": "@vercel/static-build",
@@ -25,4 +26,3 @@
     "FLASK_ENV": "production"
   }
 }
-
