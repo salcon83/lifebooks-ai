@@ -1,38 +1,70 @@
-from flask import Flask, request, jsonify
+from http.server import BaseHTTPRequestHandler
 import json
 import jwt
 import datetime
 
-app = Flask(__name__)
-
-def handler(request):
-    if request.method != 'POST':
-        return jsonify({"error": "Method not allowed"}), 405
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        try:
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            email = data.get('email')
+            password = data.get('password')
+            
+            if not email or not password:
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                response = {"error": "Email and password required"}
+                self.wfile.write(json.dumps(response).encode())
+                return
+            
+            # For demo purposes, accept any valid email/password
+            if '@' in email and len(password) >= 6:
+                token = jwt.encode({
+                    'email': email,
+                    'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
+                }, 'demo-secret-key', algorithm='HS256')
+                
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                
+                response = {
+                    "message": "Login successful",
+                    "token": token,
+                    "user": {"email": email}
+                }
+                
+                self.wfile.write(json.dumps(response).encode())
+                return
+            else:
+                self.send_response(401)
+                self.send_header('Content-type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                response = {"error": "Invalid credentials"}
+                self.wfile.write(json.dumps(response).encode())
+                return
+                
+        except Exception as e:
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            response = {"error": str(e)}
+            self.wfile.write(json.dumps(response).encode())
+            return
     
-    try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not email or not password:
-            return jsonify({"error": "Email and password required"}), 400
-        
-        # For demo purposes, accept any valid email/password
-        # In production, this would verify against database
-        if '@' in email and len(password) >= 6:
-            token = jwt.encode({
-                'email': email,
-                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=30)
-            }, 'demo-secret-key', algorithm='HS256')
-            
-            return jsonify({
-                "message": "Login successful",
-                "token": token,
-                "user": {"email": email}
-            }), 200
-        else:
-            return jsonify({"error": "Invalid credentials"}), 401
-            
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+        return
 
