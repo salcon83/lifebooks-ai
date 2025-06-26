@@ -1,11 +1,13 @@
 {
   "version": 2,
-  "functions": {
-    "lifebooks-backend/src/main.py": {
-      "runtime": "python3.9"
-    }
-  },
   "builds": [
+    {
+      "src": "lifebooks-backend/src/main.py",
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "15mb"
+      }
+    },
     {
       "src": "lifebooks-frontend/package.json",
       "use": "@vercel/static-build",
@@ -15,7 +17,8 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "lifebooks-backend/src/main.py"
+      "dest": "lifebooks-backend/src/main.py",
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     },
     {
       "src": "/(.*)",
@@ -26,3 +29,4 @@
     "FLASK_ENV": "production"
   }
 }
+
