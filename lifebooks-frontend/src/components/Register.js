@@ -27,7 +27,7 @@ const Register = () => {
     setMessage('');
 
     try {
-      const response = await axios.post('/api/register', { email, password });
+      const response = await axios.post('https://lifebooks-ai-backend.onrender.com/api/register', { email, password });
       setMessage('Registration successful! Redirecting to login...');
       if (response.status === 201) {
         setTimeout(() => {
