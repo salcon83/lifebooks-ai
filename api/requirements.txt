@@ -1,0 +1,1 @@
+Flask==2.3.3\nPyJWT==2.8.0\nbcrypt==4.0.1
