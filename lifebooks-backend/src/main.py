@@ -14,7 +14,20 @@ from werkzeug.utils import secure_filename
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=["*"])
+CORS(app, 
+     origins=["*"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization"])
+
+# Add OPTIONS handler for preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add('Access-Control-Allow-Headers', "*")
+        response.headers.add('Access-Control-Allow-Methods', "*")
+        return response
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -349,13 +362,23 @@ def demo_pdf():
 def health_check():
     return jsonify({"status": "healthy", "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}), 200
 
-# Database initialization
-@app.before_first_request
-def create_tables():
-    db.create_all()
+# Simple test endpoint
+@app.route("/api/test", methods=["GET", "POST"])
+def test_endpoint():
+    return jsonify({
+        "message": "API is working!",
+        "method": request.method,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }), 200
 
-if __name__ == "__main__":
+# Initialize database tables
+def init_db():
     with app.app_context():
         db.create_all()
+
+# Initialize database on import
+init_db()
+
+if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 
