@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+
+// Removed unused 'axios' import
 
 const VoiceRecorder = ({ user }) => {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ const VoiceRecorder = ({ user }) => {
   const stopRecording = async () => {
     setIsRecording(false);
     setLoading(true);
-    
+
     try {
       // Simulate transcription
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -52,7 +53,7 @@ const VoiceRecorder = ({ user }) => {
               </button>
             )}
           </div>
-          
+
           {isRecording && (
             <div className="recording-indicator">
               <div className="pulse"></div>
@@ -75,12 +76,8 @@ const VoiceRecorder = ({ user }) => {
               {transcript}
             </div>
             <div className="transcript-actions">
-              <button className="btn btn-primary">
-                Save to Story
-              </button>
-              <button className="btn btn-secondary">
-                Enhance with AI
-              </button>
+              <button className="btn btn-primary">Save to Story</button>
+              <button className="btn btn-secondary">Enhance with AI</button>
             </div>
           </div>
         )}
@@ -92,7 +89,6 @@ const VoiceRecorder = ({ user }) => {
           background: #f8fafc;
           padding: 20px;
         }
-
         .recorder-header {
           display: flex;
           align-items: center;
@@ -102,18 +98,15 @@ const VoiceRecorder = ({ user }) => {
           margin-left: auto;
           margin-right: auto;
         }
-
         .recorder-header h1 {
           font-size: 2rem;
           font-weight: 700;
           color: #1f2937;
         }
-
         .recorder-content {
           max-width: 800px;
           margin: 0 auto;
         }
-
         .recorder-controls {
           background: white;
           border-radius: 12px;
@@ -122,11 +115,9 @@ const VoiceRecorder = ({ user }) => {
           margin-bottom: 30px;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
-
         .record-button-container {
           margin-bottom: 30px;
         }
-
         .record-button {
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: white;
@@ -144,20 +135,16 @@ const VoiceRecorder = ({ user }) => {
           justify-content: center;
           gap: 8px;
         }
-
         .record-button:hover {
           transform: scale(1.05);
         }
-
         .record-button.recording {
           background: #ef4444;
           animation: pulse 2s infinite;
         }
-
         .record-icon {
           font-size: 2rem;
         }
-
         .recording-indicator {
           color: #ef4444;
           font-weight: 600;
@@ -166,7 +153,6 @@ const VoiceRecorder = ({ user }) => {
           justify-content: center;
           gap: 10px;
         }
-
         .pulse {
           width: 12px;
           height: 12px;
@@ -174,7 +160,6 @@ const VoiceRecorder = ({ user }) => {
           border-radius: 50%;
           animation: pulse 1s infinite;
         }
-
         @keyframes pulse {
           0% {
             transform: scale(1);
@@ -189,7 +174,6 @@ const VoiceRecorder = ({ user }) => {
             opacity: 1;
           }
         }
-
         .transcription-loading {
           background: white;
           border-radius: 12px;
@@ -197,21 +181,18 @@ const VoiceRecorder = ({ user }) => {
           text-align: center;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
-
         .transcript-section {
           background: white;
           border-radius: 12px;
           padding: 30px;
           box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
-
         .transcript-section h3 {
           font-size: 1.5rem;
           font-weight: 600;
           margin-bottom: 20px;
           color: #1f2937;
         }
-
         .transcript-content {
           background: #f8fafc;
           border-radius: 8px;
@@ -220,12 +201,11 @@ const VoiceRecorder = ({ user }) => {
           line-height: 1.6;
           color: #374151;
         }
-
         .transcript-actions {
           display: flex;
           gap: 12px;
+          justify-content: center;
         }
-
         @media (max-width: 768px) {
           .transcript-actions {
             flex-direction: column;
@@ -237,4 +217,3 @@ const VoiceRecorder = ({ user }) => {
 };
 
 export default VoiceRecorder;
-
