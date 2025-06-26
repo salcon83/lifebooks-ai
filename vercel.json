@@ -1,21 +1,17 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/*.py",
-      "use": "@vercel/python"
+  "functions": {
+    "api/hello.py": {
+      "runtime": "python3.9"
     },
-    {
-      "src": "lifebooks-frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "build" }
+    "api/test.py": {
+      "runtime": "python3.9"
+    },
+    "api/register.py": {
+      "runtime": "python3.9"
+    },
+    "api/login.py": {
+      "runtime": "python3.9"
     }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "lifebooks-frontend/build/$1"
-    }
-  ]
+  }
 }
 
