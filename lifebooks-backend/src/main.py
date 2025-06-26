@@ -1096,3 +1096,370 @@ if __name__ == "__main__":
         db.create_all()
     app.run(host="0.0.0.0", port=5000, debug=True)
 
+
+# Import interview models
+from interview_models import InterviewSession, InterviewQuestion, InterviewResponse
+
+# AI Interviewer System
+@app.route("/api/interview/start", methods=["POST"])
+def start_interview():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    data = request.get_json()
+    topic = data.get("topic", "")
+    
+    if not topic:
+        return jsonify({"message": "Interview topic is required"}), 400
+
+    try:
+        # Create new interview session
+        session = InterviewSession(
+            user_id=user.id,
+            topic=topic,
+            session_type='trial' if user.subscription_plan == 'trial' else 'full',
+            total_questions=5 if user.subscription_plan == 'trial' else 20
+        )
+        
+        db.session.add(session)
+        db.session.commit()
+        
+        # Generate first question
+        first_question = generate_interview_question(session, 1, topic)
+        
+        return jsonify({
+            "message": "Interview session started",
+            "session": session.to_dict(),
+            "first_question": first_question.to_dict()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": "Failed to start interview",
+            "error": str(e)
+        }), 500
+
+@app.route("/api/interview/<int:session_id>/question", methods=["GET"])
+def get_current_question(session_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        return jsonify({"message": "Interview session not found"}), 404
+
+    # Get current question
+    current_question = InterviewQuestion.query.filter_by(
+        session_id=session_id, 
+        question_number=session.current_question + 1
+    ).first()
+    
+    if not current_question:
+        return jsonify({"message": "No more questions available"}), 404
+
+    return jsonify({
+        "question": current_question.to_dict(),
+        "session": session.to_dict()
+    }), 200
+
+@app.route("/api/interview/<int:session_id>/respond", methods=["POST"])
+def submit_response(session_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        return jsonify({"message": "Interview session not found"}), 404
+
+    data = request.get_json()
+    response_text = data.get("response", "")
+    question_id = data.get("question_id")
+    
+    if not response_text or not question_id:
+        return jsonify({"message": "Response text and question ID are required"}), 400
+
+    try:
+        # Create response record
+        response = InterviewResponse(
+            session_id=session_id,
+            question_id=question_id,
+            response_text=response_text
+        )
+        response.update_word_count()
+        
+        # Analyze response with AI
+        analysis = analyze_response_with_ai(response_text)
+        response.sentiment = analysis.get('sentiment')
+        response.set_key_themes(analysis.get('themes', []))
+        response.set_follow_up_suggestions(analysis.get('follow_ups', []))
+        
+        db.session.add(response)
+        
+        # Update session progress
+        session.questions_completed += 1
+        session.current_question += 1
+        session.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Check if interview is complete
+        if session.questions_completed >= session.total_questions:
+            session.status = 'completed'
+            session.completed_at = datetime.datetime.now(datetime.timezone.utc)
+            
+            db.session.commit()
+            
+            return jsonify({
+                "message": "Interview completed!",
+                "session": session.to_dict(),
+                "response": response.to_dict(),
+                "completed": True,
+                "next_step": "generate_pdf" if user.subscription_plan == 'trial' else "view_story"
+            }), 200
+        
+        # Generate next question
+        next_question = generate_interview_question(
+            session, 
+            session.current_question + 1, 
+            session.topic,
+            context=response_text
+        )
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": "Response recorded successfully",
+            "response": response.to_dict(),
+            "next_question": next_question.to_dict(),
+            "session": session.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            "message": "Failed to record response",
+            "error": str(e)
+        }), 500
+
+@app.route("/api/interview/<int:session_id>/pdf", methods=["GET"])
+def generate_trial_pdf(session_id):
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+
+    session = InterviewSession.query.filter_by(id=session_id, user_id=user.id).first()
+    if not session:
+        return jsonify({"message": "Interview session not found"}), 404
+
+    if session.status != 'completed':
+        return jsonify({"message": "Interview must be completed first"}), 400
+
+    try:
+        # Generate PDF from interview responses
+        pdf_content = create_interview_pdf(session)
+        
+        return send_file(
+            io.BytesIO(pdf_content),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'lifebooks_trial_{session.topic.replace(" ", "_")}.pdf'
+        )
+        
+    except Exception as e:
+        return jsonify({
+            "message": "Failed to generate PDF",
+            "error": str(e)
+        }), 500
+
+def generate_interview_question(session, question_number, topic, context=None):
+    """Generate AI-powered interview question"""
+    try:
+        # Base prompts for different question numbers
+        prompts = {
+            1: f"Generate a warm, welcoming opening question to start someone talking about '{topic}'. Make it personal and inviting.",
+            2: f"Based on the topic '{topic}', ask a question that helps explore the emotions and feelings involved.",
+            3: f"Create a question that digs deeper into specific details and memories about '{topic}'.",
+            4: f"Ask about the impact or significance of '{topic}' in their life.",
+            5: f"Generate a reflective closing question about '{topic}' that helps them think about lessons learned or advice they'd give."
+        }
+        
+        base_prompt = prompts.get(question_number, f"Generate a thoughtful question about '{topic}'.")
+        
+        if context:
+            prompt = f"{base_prompt}\n\nContext from their previous response: {context[:200]}...\n\nGenerate a follow-up question that builds on what they shared."
+        else:
+            prompt = base_prompt
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a compassionate interviewer helping people tell their life stories. Ask warm, thoughtful questions that encourage detailed, personal responses. Keep questions conversational and not too formal."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=150,
+            temperature=0.7
+        )
+        
+        question_text = response.choices[0].message.content.strip()
+        
+        # Create question record
+        question = InterviewQuestion(
+            session_id=session.id,
+            question_number=question_number,
+            question_text=question_text,
+            context=context,
+            generation_prompt=prompt,
+            asked_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        
+        db.session.add(question)
+        db.session.commit()
+        
+        return question
+        
+    except Exception as e:
+        # Fallback questions if AI fails
+        fallback_questions = {
+            1: f"Tell me about a memorable moment related to {topic}. What made it special?",
+            2: f"How did {topic} make you feel, and why was it important to you?",
+            3: f"Can you describe the details of that experience with {topic}?",
+            4: f"What impact did {topic} have on your life or the lives of others?",
+            5: f"Looking back at {topic}, what would you want others to know or learn from your experience?"
+        }
+        
+        question_text = fallback_questions.get(question_number, f"Tell me more about {topic}.")
+        
+        question = InterviewQuestion(
+            session_id=session.id,
+            question_number=question_number,
+            question_text=question_text,
+            context=context,
+            asked_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        
+        db.session.add(question)
+        db.session.commit()
+        
+        return question
+
+def analyze_response_with_ai(response_text):
+    """Analyze user response for sentiment and themes"""
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Analyze the following personal story response. Identify: 1) Sentiment (positive/neutral/negative), 2) Key themes (max 3), 3) Potential follow-up questions (max 2). Respond in JSON format."},
+                {"role": "user", "content": f"Analyze this response: {response_text}"}
+            ],
+            max_tokens=200,
+            temperature=0.3
+        )
+        
+        analysis_text = response.choices[0].message.content.strip()
+        
+        # Try to parse JSON response
+        try:
+            import json
+            analysis = json.loads(analysis_text)
+            return analysis
+        except:
+            # Fallback if JSON parsing fails
+            return {
+                "sentiment": "neutral",
+                "themes": ["personal experience"],
+                "follow_ups": ["Can you tell me more about that?"]
+            }
+            
+    except Exception as e:
+        return {
+            "sentiment": "neutral",
+            "themes": ["personal story"],
+            "follow_ups": ["What happened next?"]
+        }
+
+def create_interview_pdf(session):
+    """Create PDF from interview session"""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    
+    # Create PDF buffer
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=1*inch)
+    
+    # Get styles
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=30,
+        textColor='#2c3e50'
+    )
+    
+    # Build PDF content
+    story = []
+    
+    # Title
+    story.append(Paragraph(f"Your Life Story: {session.topic}", title_style))
+    story.append(Spacer(1, 20))
+    
+    # Introduction
+    intro_text = """
+    Thank you for sharing your story with Lifebooks! Below are your responses to our AI interviewer. 
+    This is just the beginning - upgrade to Lifebooks Pro to continue building your complete life story 
+    with unlimited interviews, voice recordings, and professional book creation.
+    """
+    story.append(Paragraph(intro_text, styles['Normal']))
+    story.append(Spacer(1, 30))
+    
+    # Get questions and responses
+    questions = InterviewQuestion.query.filter_by(session_id=session.id).order_by(InterviewQuestion.question_number).all()
+    responses = InterviewResponse.query.filter_by(session_id=session.id).all()
+    
+    # Create response lookup
+    response_lookup = {r.question_id: r for r in responses}
+    
+    # Add Q&A pairs
+    for question in questions:
+        # Question
+        story.append(Paragraph(f"<b>Q{question.question_number}:</b> {question.question_text}", styles['Heading3']))
+        story.append(Spacer(1, 10))
+        
+        # Response
+        response = response_lookup.get(question.id)
+        if response:
+            story.append(Paragraph(response.response_text, styles['Normal']))
+        else:
+            story.append(Paragraph("<i>No response recorded</i>", styles['Italic']))
+        
+        story.append(Spacer(1, 20))
+    
+    # Call to action
+    cta_text = """
+    <b>Ready to continue your story?</b><br/><br/>
+    Upgrade to Lifebooks Pro (€10/month) to unlock:
+    • Unlimited AI interviews with personalized questions
+    • Voice recording and transcription
+    • AI-powered text enhancement
+    • Professional book covers and formatting
+    • PDF and Kindle book creation
+    • Family sharing and collaboration
+    
+    Visit lifebooks.ai to upgrade and continue building your legacy!
+    """
+    story.append(Spacer(1, 30))
+    story.append(Paragraph(cta_text, styles['Normal']))
+    
+    # Build PDF
+    doc.build(story)
+    
+    # Get PDF content
+    pdf_content = buffer.getvalue()
+    buffer.close()
+    
+    return pdf_content
+
