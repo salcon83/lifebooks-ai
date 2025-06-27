@@ -1,140 +1,237 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 
-const Register = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+const Register = ({ onLogin }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (password !== confirmPassword) {
-      setMessage('Passwords do not match');
+    setLoading(true);
+    setError('');
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
       return;
     }
-
-    if (password.length < 6) {
-      setMessage('Password must be at least 6 characters long');
-      return;
-    }
-
-    setIsLoading(true);
-    setMessage('');
 
     try {
-      const response = await axios.post('https://lifebooks-ai-backend.onrender.com/api/register', { email, password });
-      setMessage('Registration successful! Redirecting to login...');
-      if (response.status === 201) {
-        setTimeout(() => {
-          navigate('/login');
-        }, 1500);
-      }
+      const response = await axios.post('/api/register', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password
+      });
+      const { token, user } = response.data;
+      onLogin(user, token);
     } catch (error) {
-      setMessage(error.response?.data?.message || 'Registration failed');
+      setError(error.response?.data?.message || 'Registration failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
     <div className="auth-page">
       <div className="auth-container">
-        <div className="auth-card">
-          <div className="auth-header">
-            <h1 className="auth-title">Create Your Account</h1>
-            <p className="auth-subtitle">Start your storytelling journey with Lifebooks</p>
-          </div>
+        <div className="auth-header">
+          <Link to="/" className="auth-brand">
+            Lifebooks
+          </Link>
+          <h1>Create Your Account</h1>
+          <p>Start your storytelling journey today</p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="auth-form">
-            <div className="form-group">
-              <label className="form-label" htmlFor="email">Email Address</label>
-              <input
-                id="email"
-                type="email"
-                className="form-input"
-                placeholder="Enter your email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                className="form-input"
-                placeholder="Create a password (min. 6 characters)"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                minLength={6}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="confirmPassword">Confirm Password</label>
-              <input
-                id="confirmPassword"
-                type="password"
-                className="form-input"
-                placeholder="Confirm your password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                minLength={6}
-              />
-            </div>
-
-            <button 
-              type="submit" 
-              className={`btn btn-primary auth-submit ${isLoading ? 'loading' : ''}`}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <span className="loading-spinner-small"></span>
-                  Creating Account...
-                </>
-              ) : (
-                'Create Account'
-              )}
-            </button>
-          </form>
-
-          {message && (
-            <div className={`auth-message ${message.includes('successful') ? 'success' : 'error'}`}>
-              {message}
+        <form onSubmit={handleSubmit} className="auth-form">
+          {error && (
+            <div className="error-message">
+              {error}
             </div>
           )}
 
-          <div className="auth-footer">
-            <p>
-              Already have an account?{' '}
-              <a href="/login" className="auth-link">Sign in here</a>
-            </p>
+          <div className="form-group">
+            <label htmlFor="name" className="form-label">
+              Full Name
+            </label>
+            <input
+              type="text"
+              id="name"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              className="form-input"
+              required
+              placeholder="Enter your full name"
+            />
           </div>
 
-          <div className="auth-features">
-            <h3>What you'll get:</h3>
-            <ul>
-              <li>✨ AI-powered voice transcription</li>
-              <li>📝 Smart text enhancement</li>
-              <li>🎨 Custom book cover generation</li>
-              <li>📚 Professional PDF & EPUB export</li>
-            </ul>
+          <div className="form-group">
+            <label htmlFor="email" className="form-label">
+              Email Address
+            </label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
+              className="form-input"
+              required
+              placeholder="Enter your email"
+            />
           </div>
+
+          <div className="form-group">
+            <label htmlFor="password" className="form-label">
+              Password
+            </label>
+            <input
+              type="password"
+              id="password"
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              className="form-input"
+              required
+              placeholder="Create a password"
+              minLength="6"
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="confirmPassword" className="form-label">
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              id="confirmPassword"
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              className="form-input"
+              required
+              placeholder="Confirm your password"
+              minLength="6"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="btn btn-primary btn-full"
+            disabled={loading}
+          >
+            {loading ? 'Creating Account...' : 'Create Account'}
+          </button>
+        </form>
+
+        <div className="auth-footer">
+          <p>
+            Already have an account?{' '}
+            <Link to="/login" className="auth-link">
+              Sign in here
+            </Link>
+          </p>
         </div>
       </div>
+
+      <style jsx>{`
+        .auth-page {
+          min-height: 100vh;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+        }
+
+        .auth-container {
+          background: white;
+          border-radius: 12px;
+          padding: 40px;
+          width: 100%;
+          max-width: 400px;
+          box-shadow: 0 20px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .auth-header {
+          text-align: center;
+          margin-bottom: 30px;
+        }
+
+        .auth-brand {
+          font-size: 24px;
+          font-weight: 700;
+          color: #667eea;
+          text-decoration: none;
+          display: block;
+          margin-bottom: 20px;
+        }
+
+        .auth-header h1 {
+          font-size: 28px;
+          font-weight: 700;
+          color: #1f2937;
+          margin-bottom: 8px;
+        }
+
+        .auth-header p {
+          color: #6b7280;
+          font-size: 16px;
+        }
+
+        .auth-form {
+          margin-bottom: 30px;
+        }
+
+        .error-message {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          color: #dc2626;
+          padding: 12px 16px;
+          border-radius: 8px;
+          margin-bottom: 20px;
+          font-size: 14px;
+        }
+
+        .auth-footer {
+          text-align: center;
+        }
+
+        .auth-footer p {
+          color: #6b7280;
+          font-size: 14px;
+        }
+
+        .auth-link {
+          color: #667eea;
+          text-decoration: none;
+          font-weight: 600;
+        }
+
+        .auth-link:hover {
+          text-decoration: underline;
+        }
+
+        @media (max-width: 480px) {
+          .auth-container {
+            padding: 30px 20px;
+          }
+        }
+      `}</style>
     </div>
   );
 };
