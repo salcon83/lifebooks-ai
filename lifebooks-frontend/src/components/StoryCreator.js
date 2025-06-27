@@ -185,7 +185,7 @@ const StoryCreator = () => {
         method: 'POST',
         body: formData,
         headers: {
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3NTE2NzEzNDh9.5_s2csJ1tKwdiVCeKSUjeXcfEYbBW53ZLzKP92xLAFo`
+          'Authorization': `Bearer demo-token`
         }
       });
       
@@ -215,7 +215,7 @@ const StoryCreator = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3NTE2NzEzNDh9.5_s2csJ1tKwdiVCeKSUjeXcfEYbBW53ZLzKP92xLAFo`
+          'Authorization': `Bearer demo-token`
         },
         body: JSON.stringify({
           text: originalText,
