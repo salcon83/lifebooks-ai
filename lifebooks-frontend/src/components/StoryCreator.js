@@ -168,7 +168,7 @@ const StoryCreator = () => {
     }
   };
 
-  const API_BASE_URL = 'https://9yhyi3cq9630.manus.space';
+  const API_BASE_URL = 'https://5001-itl2cnh02l1oonq7mrlka-9a32bb50.manusvm.computer';
 
   const transcribeAudio = async (audioBlob) => {
     setIsLoading(true);
