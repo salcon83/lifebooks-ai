@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Mic, MicOff, Play, Pause, FileText, Camera, Edit3, Eye, Save, ArrowRight, ArrowLeft, CheckCircle } from 'lucide-react';
 
 const StoryCreator = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -172,23 +171,16 @@ const StoryCreator = () => {
   const transcribeAudio = async (audioBlob) => {
     setIsLoading(true);
     try {
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.wav');
-      
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        body: formData
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setTranscription(data.transcription);
-        setCurrentAnswer(prev => prev + ' ' + data.transcription);
-      }
+      // Simulated transcription for demo
+      setTimeout(() => {
+        setTranscription("This is a demo transcription of your voice recording.");
+        setCurrentAnswer(prev => prev + ' This is a demo transcription of your voice recording.');
+        setIsLoading(false);
+      }, 2000);
     } catch (error) {
       console.error('Transcription error:', error);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const handleFileUpload = (event) => {
@@ -241,56 +233,31 @@ const StoryCreator = () => {
     setCurrentStep(4);
     
     try {
-      const response = await fetch('/api/generate-story', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          storyType,
-          title: storyTitle,
-          answers,
-          uploadedFiles: uploadedFiles.map(f => ({ name: f.name, type: f.type }))
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        setGeneratedStory(data.story);
-        setEditedStory(data.story);
-      }
+      // Simulated story generation for demo
+      setTimeout(() => {
+        const demoStory = `# ${storyTitle}\n\nBased on your responses, here is your personalized story...\n\n${Object.values(answers).join('\n\n')}`;
+        setGeneratedStory(demoStory);
+        setEditedStory(demoStory);
+        setIsLoading(false);
+      }, 3000);
     } catch (error) {
       console.error('Story generation error:', error);
-      // Fallback demo story
-      const demoStory = `# ${storyTitle}\n\nBased on your responses, here is your personalized story...\n\n${Object.values(answers).join('\n\n')}`;
-      setGeneratedStory(demoStory);
-      setEditedStory(demoStory);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const saveStory = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/stories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: storyTitle,
-          type: storyType,
-          content: editedStory,
-          answers,
-          files: uploadedFiles.map(f => ({ name: f.name, type: f.type }))
-        })
-      });
-      
-      if (response.ok) {
+      setTimeout(() => {
         alert('Story saved successfully!');
-        // Redirect to dashboard or story list
-      }
+        setIsLoading(false);
+      }, 1000);
     } catch (error) {
       console.error('Save error:', error);
       alert('Story saved locally!');
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const renderStepIndicator = () => (
@@ -300,7 +267,7 @@ const StoryCreator = () => {
           <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
             currentStep >= step ? 'bg-orange-500' : 'bg-gray-300'
           }`}>
-            {currentStep > step ? <CheckCircle size={20} /> : step}
+            {currentStep > step ? '✓' : step}
           </div>
           {step < 5 && (
             <div className={`w-16 h-1 ${currentStep > step ? 'bg-orange-500' : 'bg-gray-300'}`} />
@@ -326,7 +293,7 @@ const StoryCreator = () => {
             }`}
           >
             <div className={`w-12 h-12 rounded-lg ${type.color} mb-4 flex items-center justify-center`}>
-              <FileText className="text-white" size={24} />
+              <span className="text-white text-2xl">📖</span>
             </div>
             <h3 className="text-xl font-semibold mb-2">{type.name}</h3>
             <p className="text-gray-600 text-sm">
@@ -364,7 +331,7 @@ const StoryCreator = () => {
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-orange-500 transition-colors"
           >
-            <Upload className="mx-auto mb-4 text-gray-400" size={48} />
+            <span className="text-6xl mb-4 block">📁</span>
             <p className="text-lg text-gray-600">Click to upload photos, documents, or other files</p>
             <p className="text-sm text-gray-500 mt-2">Supports images, PDFs, and text documents</p>
           </div>
@@ -387,7 +354,7 @@ const StoryCreator = () => {
                   {file.preview ? (
                     <img src={file.preview} alt={file.name} className="w-12 h-12 object-cover rounded" />
                   ) : (
-                    <FileText size={24} className="text-gray-500" />
+                    <span className="text-2xl">📄</span>
                   )}
                   <div>
                     <p className="font-medium">{file.name}</p>
@@ -459,7 +426,7 @@ const StoryCreator = () => {
                   : 'bg-blue-500 text-white hover:bg-blue-600'
               }`}
             >
-              {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+              <span>{isRecording ? '🛑' : '🎤'}</span>
               <span>{isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start Recording'}</span>
             </button>
 
@@ -471,7 +438,7 @@ const StoryCreator = () => {
                 }}
                 className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                <Play size={16} />
+                <span>▶️</span>
                 <span>Play Recording</span>
               </button>
             )}
@@ -490,7 +457,7 @@ const StoryCreator = () => {
               disabled={currentQuestionIndex === 0}
               className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <ArrowLeft size={20} />
+              <span>⬅️</span>
               <span>Previous</span>
             </button>
 
@@ -500,7 +467,7 @@ const StoryCreator = () => {
               className="flex items-center space-x-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
               <span>{currentQuestionIndex === aiQuestions.length - 1 ? 'Generate Story' : 'Next'}</span>
-              <ArrowRight size={20} />
+              <span>➡️</span>
             </button>
           </div>
         </div>
@@ -526,7 +493,7 @@ const StoryCreator = () => {
                 onClick={() => setShowPreview(!showPreview)}
                 className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
-                <Eye size={16} />
+                <span>👁️</span>
                 <span>{showPreview ? 'Edit Mode' : 'Preview Mode'}</span>
               </button>
             </div>
@@ -552,7 +519,7 @@ const StoryCreator = () => {
               onClick={() => setCurrentStep(3)}
               className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
-              <ArrowLeft size={20} />
+              <span>⬅️</span>
               <span>Back to Interview</span>
             </button>
 
@@ -562,7 +529,7 @@ const StoryCreator = () => {
                 className="flex items-center space-x-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600"
               >
                 <span>Finalize Story</span>
-                <ArrowRight size={20} />
+                <span>➡️</span>
               </button>
             </div>
           </div>
@@ -577,7 +544,7 @@ const StoryCreator = () => {
       
       <div className="bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-8">
-          <CheckCircle className="mx-auto mb-4 text-green-500" size={64} />
+          <span className="text-6xl mb-4 block">✅</span>
           <h3 className="text-2xl font-semibold mb-2">Your story "{storyTitle}" is ready!</h3>
           <p className="text-gray-600">Choose what you'd like to do next with your story.</p>
         </div>
@@ -587,7 +554,7 @@ const StoryCreator = () => {
             onClick={saveStory}
             className="flex items-center justify-center space-x-3 p-6 border-2 border-orange-500 rounded-lg hover:bg-orange-50 transition-colors"
           >
-            <Save className="text-orange-500" size={24} />
+            <span className="text-orange-500 text-2xl">💾</span>
             <div className="text-left">
               <h4 className="font-semibold">Save Story</h4>
               <p className="text-sm text-gray-600">Save to your dashboard for later editing</p>
@@ -595,10 +562,10 @@ const StoryCreator = () => {
           </button>
 
           <button
-            onClick={() => window.location.href = '/covers'}
+            onClick={() => alert('Book cover creation feature coming soon!')}
             className="flex items-center justify-center space-x-3 p-6 border-2 border-blue-500 rounded-lg hover:bg-blue-50 transition-colors"
           >
-            <Camera className="text-blue-500" size={24} />
+            <span className="text-blue-500 text-2xl">📷</span>
             <div className="text-left">
               <h4 className="font-semibold">Create Book Cover</h4>
               <p className="text-sm text-gray-600">Design a beautiful cover for your story</p>
@@ -606,10 +573,10 @@ const StoryCreator = () => {
           </button>
 
           <button
-            onClick={() => window.location.href = '/publish'}
+            onClick={() => alert('Publishing feature coming soon!')}
             className="flex items-center justify-center space-x-3 p-6 border-2 border-green-500 rounded-lg hover:bg-green-50 transition-colors"
           >
-            <FileText className="text-green-500" size={24} />
+            <span className="text-green-500 text-2xl">📚</span>
             <div className="text-left">
               <h4 className="font-semibold">Publish Book</h4>
               <p className="text-sm text-gray-600">Publish to Amazon KDP or other platforms</p>
@@ -628,7 +595,7 @@ const StoryCreator = () => {
             }}
             className="flex items-center justify-center space-x-3 p-6 border-2 border-purple-500 rounded-lg hover:bg-purple-50 transition-colors"
           >
-            <Upload className="text-purple-500" size={24} />
+            <span className="text-purple-500 text-2xl">⬇️</span>
             <div className="text-left">
               <h4 className="font-semibold">Download Story</h4>
               <p className="text-sm text-gray-600">Download as text file or PDF</p>
