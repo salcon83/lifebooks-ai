@@ -5,6 +5,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import StoryEditor from './components/StoryEditor';
+import StoryCreator from './components/StoryCreator';
 import VoiceRecorder from './components/VoiceRecorder';
 import BookCoverCreator from './components/BookCoverCreator';
 import Publishing from './components/Publishing';
@@ -193,6 +194,12 @@ function App() {
               Your Story
             </button>
             <button 
+              className={`nav-link ${currentPage === 'create-story' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('create-story')}
+            >
+              Create Story
+            </button>
+            <button 
               className={`nav-link ${currentPage === 'terms' ? 'active' : ''}`}
               onClick={() => setCurrentPage('terms')}
             >
@@ -242,6 +249,7 @@ function App() {
         {currentPage === 'home' && !user && <LandingPage onNavigate={setCurrentPage} />}
         {currentPage === 'home' && user && <Dashboard user={user} onLogout={handleLogout} />}
         {currentPage === 'story' && user && <Dashboard user={user} onLogout={handleLogout} />}
+        {currentPage === 'create-story' && <StoryCreator user={user} />}
         {currentPage === 'login' && <Login onLogin={handleLogin} onNavigate={setCurrentPage} />}
         {currentPage === 'register' && <Register onLogin={handleLogin} onNavigate={setCurrentPage} />}
         {currentPage === 'terms' && <TermsAndConditions />}
