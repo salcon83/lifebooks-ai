@@ -382,3 +382,130 @@ init_db()
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
 
+
+
+# Audio transcription endpoint using OpenAI Whisper
+@app.route("/api/transcribe", methods=["POST"])
+def transcribe_audio():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    # Check usage limits
+    can_use, message = user.check_usage_limit('voice_recordings')
+    if not can_use:
+        return jsonify({"message": message}), 429
+    
+    # Check if audio file is present
+    if 'audio' not in request.files:
+        return jsonify({"message": "No audio file provided"}), 400
+    
+    audio_file = request.files['audio']
+    if audio_file.filename == '':
+        return jsonify({"message": "No audio file selected"}), 400
+    
+    if not allowed_audio_file(audio_file.filename):
+        return jsonify({"message": "Invalid audio file format. Supported formats: mp3, wav, mp4, m4a, webm, flac"}), 400
+    
+    try:
+        # Create a temporary file to save the audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+            audio_file.save(temp_file.name)
+            
+            # Use OpenAI Whisper API for transcription
+            with open(temp_file.name, 'rb') as audio_data:
+                transcript = openai.Audio.transcribe(
+                    model="whisper-1",
+                    file=audio_data,
+                    response_format="text"
+                )
+            
+            # Clean up temporary file
+            os.unlink(temp_file.name)
+            
+            # Increment usage counter
+            user.increment_usage('voice_recordings')
+            
+            return jsonify({
+                "message": "Transcription successful",
+                "transcription": transcript,
+                "usage": f"Voice recordings used: {user.monthly_voice_recordings}"
+            }), 200
+            
+    except Exception as e:
+        # Clean up temporary file if it exists
+        try:
+            os.unlink(temp_file.name)
+        except:
+            pass
+            
+        return jsonify({
+            "message": "Transcription failed",
+            "error": str(e)
+        }), 500
+
+# Story generation endpoint using OpenAI GPT
+@app.route("/api/generate-story", methods=["POST"])
+def generate_story():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    # Check usage limits
+    can_use, message = user.check_usage_limit('ai_enhancements')
+    if not can_use:
+        return jsonify({"message": message}), 429
+    
+    data = request.get_json()
+    story_type = data.get("storyType", "")
+    title = data.get("title", "")
+    answers = data.get("answers", {})
+    uploaded_files = data.get("uploadedFiles", [])
+    
+    if not title or not answers:
+        return jsonify({"message": "Story title and answers are required"}), 400
+    
+    try:
+        # Create a prompt for story generation
+        prompt = f"""
+        Create a compelling {story_type} story titled "{title}" based on the following interview responses:
+        
+        """
+        
+        for question_index, answer in answers.items():
+            prompt += f"Q{int(question_index) + 1}: {answer}\n\n"
+        
+        prompt += """
+        Please write this as a well-structured, engaging narrative that flows naturally. 
+        Use descriptive language and maintain the authentic voice of the storyteller.
+        Format the story with proper paragraphs and make it suitable for a book.
+        """
+        
+        # Use OpenAI GPT to generate the story
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a professional ghostwriter specializing in personal narratives and life stories. Create engaging, well-structured stories that honor the authentic voice of the storyteller."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=2000,
+            temperature=0.7
+        )
+        
+        generated_story = response.choices[0].message.content
+        
+        # Increment usage counter
+        user.increment_usage('ai_enhancements')
+        
+        return jsonify({
+            "message": "Story generated successfully",
+            "story": generated_story,
+            "usage": f"AI enhancements used: {user.monthly_ai_enhancements}"
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "message": "Story generation failed",
+            "error": str(e)
+        }), 500
+

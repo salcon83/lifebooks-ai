@@ -171,16 +171,31 @@ const StoryCreator = () => {
   const transcribeAudio = async (audioBlob) => {
     setIsLoading(true);
     try {
-      // Simulated transcription for demo
-      setTimeout(() => {
-        setTranscription("This is a demo transcription of your voice recording.");
-        setCurrentAnswer(prev => prev + ' This is a demo transcription of your voice recording.');
-        setIsLoading(false);
-      }, 2000);
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.wav');
+      
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setTranscription(data.transcription);
+        setCurrentAnswer(prev => prev + ' ' + data.transcription);
+      } else {
+        const errorData = await response.json();
+        console.error('Transcription error:', errorData.message);
+        alert(`Transcription failed: ${errorData.message}`);
+      }
     } catch (error) {
       console.error('Transcription error:', error);
-      setIsLoading(false);
+      alert('Transcription failed. Please try again.');
     }
+    setIsLoading(false);
   };
 
   const handleFileUpload = (event) => {
@@ -233,31 +248,75 @@ const StoryCreator = () => {
     setCurrentStep(4);
     
     try {
-      // Simulated story generation for demo
-      setTimeout(() => {
+      const response = await fetch('/api/generate-story', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          storyType,
+          title: storyTitle,
+          answers,
+          uploadedFiles: uploadedFiles.map(f => ({ name: f.name, type: f.type }))
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setGeneratedStory(data.story);
+        setEditedStory(data.story);
+      } else {
+        const errorData = await response.json();
+        console.error('Story generation error:', errorData.message);
+        alert(`Story generation failed: ${errorData.message}`);
+        // Fallback to demo story
         const demoStory = `# ${storyTitle}\n\nBased on your responses, here is your personalized story...\n\n${Object.values(answers).join('\n\n')}`;
         setGeneratedStory(demoStory);
         setEditedStory(demoStory);
-        setIsLoading(false);
-      }, 3000);
+      }
     } catch (error) {
       console.error('Story generation error:', error);
-      setIsLoading(false);
+      alert('Story generation failed. Please try again.');
+      // Fallback demo story
+      const demoStory = `# ${storyTitle}\n\nBased on your responses, here is your personalized story...\n\n${Object.values(answers).join('\n\n')}`;
+      setGeneratedStory(demoStory);
+      setEditedStory(demoStory);
     }
+    setIsLoading(false);
   };
 
   const saveStory = async () => {
     setIsLoading(true);
     try {
-      setTimeout(() => {
+      const response = await fetch('/api/story', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({
+          title: storyTitle,
+          content: editedStory,
+          summary: `${storyType} story created through AI interview process`,
+          tags: [storyType, 'ai-generated', 'interview']
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
         alert('Story saved successfully!');
-        setIsLoading(false);
-      }, 1000);
+        console.log('Saved story:', data.story);
+      } else {
+        const errorData = await response.json();
+        console.error('Save error:', errorData.message);
+        alert(`Save failed: ${errorData.message}`);
+      }
     } catch (error) {
       console.error('Save error:', error);
-      alert('Story saved locally!');
-      setIsLoading(false);
+      alert('Story saved locally! (Network error occurred)');
     }
+    setIsLoading(false);
   };
 
   const renderStepIndicator = () => (
