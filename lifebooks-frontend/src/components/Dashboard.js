@@ -6,6 +6,7 @@ const Dashboard = ({ user, onLogout }) => {
   const navigate = useNavigate();
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showNewStoryModal, setShowNewStoryModal] = useState(false);
 
   useEffect(() => {
     fetchStories();
@@ -25,38 +26,134 @@ const Dashboard = ({ user, onLogout }) => {
     }
   };
 
-  const createNewStory = async () => {
+  const createNewStory = async (storyType) => {
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post('/api/stories', 
-        { title: 'New Story' },
+        { 
+          title: `New ${storyType} Story`,
+          story_type: storyType 
+        },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      setShowNewStoryModal(false);
       navigate(`/story/${response.data.story.id}`);
     } catch (error) {
       console.error('Failed to create story:', error);
     }
   };
 
+  const getStoryProgress = (story) => {
+    if (!story.content || story.content.length < 100) return { stage: 'Starting', progress: 10 };
+    if (story.content.length < 1000) return { stage: 'Writing', progress: 30 };
+    if (story.content.length < 5000) return { stage: 'Developing', progress: 60 };
+    if (!story.cover_generated) return { stage: 'Ready for Cover', progress: 80 };
+    return { stage: 'Ready to Publish', progress: 100 };
+  };
+
+  const storyTypes = [
+    { id: 'autobiography', name: 'Autobiography', description: 'Your complete life story' },
+    { id: 'memoir', name: 'Memoir', description: 'Specific memories or experiences' },
+    { id: 'family_history', name: 'Family History', description: 'Stories about your family' },
+    { id: 'travel', name: 'Travel Stories', description: 'Adventures and journeys' },
+    { id: 'professional', name: 'Professional Journey', description: 'Career and work experiences' },
+    { id: 'custom', name: 'Custom Story', description: 'Your own unique story type' }
+  ];
+
   return (
     <div className="dashboard">
       <div className="dashboard-container">
-        {/* Welcome Message */}
+        {/* Welcome Message - From Wireframe */}
         <div className="welcome-message">
           Welcome back, {user.name || user.email.split('@')[0]}!
         </div>
 
-        {/* Main Heading */}
+        {/* Main Heading - From Wireframe */}
         <h1 className="dashboard-title">Welcome to Dashboard!</h1>
         
-        {/* Success Message */}
+        {/* Success Message - From Wireframe */}
         <p className="success-message">Authentication successful!</p>
 
-        {/* Action Buttons - Exactly as in wireframe */}
+        {/* Ongoing Stories Section */}
+        {!loading && stories.length > 0 && (
+          <div className="ongoing-stories">
+            <h2>Your Ongoing Stories</h2>
+            <div className="stories-grid">
+              {stories.map((story) => {
+                const { stage, progress } = getStoryProgress(story);
+                return (
+                  <div key={story.id} className="story-card">
+                    <div className="story-header">
+                      <h3>{story.title}</h3>
+                      <span className={`story-stage stage-${stage.toLowerCase().replace(/\s+/g, '-')}`}>
+                        {stage}
+                      </span>
+                    </div>
+                    
+                    <div className="progress-section">
+                      <div className="progress-bar">
+                        <div 
+                          className="progress-fill" 
+                          style={{ width: `${progress}%` }}
+                        ></div>
+                      </div>
+                      <span className="progress-text">{progress}% Complete</span>
+                    </div>
+
+                    <p className="story-preview">
+                      {story.content ? 
+                        story.content.substring(0, 120) + '...' : 
+                        'Click to start writing your story'
+                      }
+                    </p>
+
+                    <div className="story-actions">
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => navigate(`/story/${story.id}`)}
+                      >
+                        Continue Writing
+                      </button>
+                      
+                      {progress >= 80 && (
+                        <div className="completion-actions">
+                          <button 
+                            className="btn btn-secondary"
+                            onClick={() => navigate(`/covers?story=${story.id}`)}
+                          >
+                            Create Cover
+                          </button>
+                          <button 
+                            className="btn btn-success"
+                            onClick={() => navigate(`/publish?story=${story.id}`)}
+                          >
+                            Publish
+                          </button>
+                          <button 
+                            className="btn btn-outline"
+                            onClick={() => window.open(`/api/stories/${story.id}/pdf`, '_blank')}
+                          >
+                            Export PDF
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="story-meta">
+                      <span>Last updated: {new Date(story.updated_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons - From Wireframe */}
         <div className="action-buttons">
           <button 
             className="action-btn create-story-btn"
-            onClick={createNewStory}
+            onClick={() => setShowNewStoryModal(true)}
           >
             Create New Story
           </button>
@@ -83,28 +180,44 @@ const Dashboard = ({ user, onLogout }) => {
           </button>
         </div>
 
-        {/* Stories Section - Show existing stories */}
-        {!loading && stories.length > 0 && (
-          <div className="stories-section">
-            <h2>Your Stories</h2>
-            <div className="stories-list">
-              {stories.map((story) => (
+        {/* Empty State */}
+        {!loading && stories.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-icon">📖</div>
+            <h3>No stories yet</h3>
+            <p>Start your storytelling journey by creating your first story</p>
+          </div>
+        )}
+      </div>
+
+      {/* New Story Modal */}
+      {showNewStoryModal && (
+        <div className="modal-overlay" onClick={() => setShowNewStoryModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Choose Your Story Type</h2>
+              <button 
+                className="modal-close"
+                onClick={() => setShowNewStoryModal(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="story-types-grid">
+              {storyTypes.map((type) => (
                 <div 
-                  key={story.id} 
-                  className="story-item"
-                  onClick={() => navigate(`/story/${story.id}`)}
+                  key={type.id}
+                  className="story-type-card"
+                  onClick={() => createNewStory(type.id)}
                 >
-                  <h3>{story.title}</h3>
-                  <p>{story.content ? story.content.substring(0, 100) + '...' : 'No content yet'}</p>
-                  <span className="story-date">
-                    {new Date(story.updated_at).toLocaleDateString()}
-                  </span>
+                  <h3>{type.name}</h3>
+                  <p>{type.description}</p>
                 </div>
               ))}
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <style jsx>{`
         .dashboard {
@@ -115,7 +228,7 @@ const Dashboard = ({ user, onLogout }) => {
         }
 
         .dashboard-container {
-          max-width: 600px;
+          max-width: 1200px;
           margin: 0 auto;
           padding: 40px 20px;
         }
@@ -145,11 +258,123 @@ const Dashboard = ({ user, onLogout }) => {
           margin-bottom: 40px;
         }
 
+        .ongoing-stories {
+          margin-bottom: 50px;
+        }
+
+        .ongoing-stories h2 {
+          font-size: 1.8rem;
+          font-weight: 600;
+          color: #1f2937;
+          margin-bottom: 30px;
+        }
+
+        .stories-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+          gap: 24px;
+          margin-bottom: 40px;
+        }
+
+        .story-card {
+          background: white;
+          padding: 24px;
+          border-radius: 12px;
+          border: 1px solid #e5e7eb;
+          transition: all 0.3s ease;
+        }
+
+        .story-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+          border-color: #3b82f6;
+        }
+
+        .story-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 16px;
+        }
+
+        .story-header h3 {
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: #1f2937;
+          margin: 0;
+          flex: 1;
+        }
+
+        .story-stage {
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .stage-starting { background: #fef3c7; color: #92400e; }
+        .stage-writing { background: #dbeafe; color: #1e40af; }
+        .stage-developing { background: #e0e7ff; color: #5b21b6; }
+        .stage-ready-for-cover { background: #fed7aa; color: #c2410c; }
+        .stage-ready-to-publish { background: #dcfce7; color: #166534; }
+
+        .progress-section {
+          margin-bottom: 16px;
+        }
+
+        .progress-bar {
+          width: 100%;
+          height: 8px;
+          background: #f3f4f6;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-bottom: 8px;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+          transition: width 0.3s ease;
+        }
+
+        .progress-text {
+          font-size: 0.875rem;
+          color: #6b7280;
+          font-weight: 500;
+        }
+
+        .story-preview {
+          color: #6b7280;
+          line-height: 1.6;
+          margin-bottom: 20px;
+        }
+
+        .story-actions {
+          margin-bottom: 16px;
+        }
+
+        .completion-actions {
+          display: flex;
+          gap: 8px;
+          margin-top: 12px;
+          flex-wrap: wrap;
+        }
+
+        .story-meta {
+          font-size: 0.875rem;
+          color: #9ca3af;
+          border-top: 1px solid #f3f4f6;
+          padding-top: 16px;
+        }
+
         .action-buttons {
           display: flex;
           flex-direction: column;
           gap: 16px;
-          margin-bottom: 50px;
+          max-width: 600px;
+          margin: 0 auto;
         }
 
         .action-btn {
@@ -204,55 +429,152 @@ const Dashboard = ({ user, onLogout }) => {
           transform: translateY(-1px);
         }
 
-        .stories-section {
-          margin-top: 40px;
+        .empty-state {
+          text-align: center;
+          padding: 60px 20px;
+          margin-bottom: 40px;
         }
 
-        .stories-section h2 {
-          font-size: 1.8rem;
+        .empty-icon {
+          font-size: 4rem;
+          margin-bottom: 20px;
+        }
+
+        .empty-state h3 {
+          font-size: 1.5rem;
           font-weight: 600;
           color: #1f2937;
-          margin-bottom: 20px;
-          text-align: center;
+          margin-bottom: 12px;
         }
 
-        .stories-list {
+        .empty-state p {
+          color: #6b7280;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(0, 0, 0, 0.5);
           display: flex;
-          flex-direction: column;
-          gap: 12px;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
         }
 
-        .story-item {
+        .modal-content {
           background: white;
+          border-radius: 12px;
+          padding: 32px;
+          max-width: 600px;
+          width: 90%;
+          max-height: 80vh;
+          overflow-y: auto;
+        }
+
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 24px;
+        }
+
+        .modal-header h2 {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: #1f2937;
+          margin: 0;
+        }
+
+        .modal-close {
+          background: none;
+          border: none;
+          font-size: 1.5rem;
+          cursor: pointer;
+          color: #6b7280;
+          padding: 4px;
+        }
+
+        .story-types-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 16px;
+        }
+
+        .story-type-card {
           padding: 20px;
+          border: 2px solid #e5e7eb;
           border-radius: 8px;
-          border: 1px solid #e5e7eb;
           cursor: pointer;
           transition: all 0.2s ease;
         }
 
-        .story-item:hover {
+        .story-type-card:hover {
           border-color: #3b82f6;
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+          background: #f8fafc;
         }
 
-        .story-item h3 {
-          font-size: 1.2rem;
+        .story-type-card h3 {
+          font-size: 1.1rem;
           font-weight: 600;
           color: #1f2937;
           margin-bottom: 8px;
         }
 
-        .story-item p {
+        .story-type-card p {
           color: #6b7280;
-          line-height: 1.5;
-          margin-bottom: 8px;
+          font-size: 0.9rem;
+          margin: 0;
         }
 
-        .story-date {
+        .btn {
+          padding: 8px 16px;
+          border-radius: 6px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          border: none;
           font-size: 0.875rem;
-          color: #9ca3af;
+        }
+
+        .btn-primary {
+          background: #3b82f6;
+          color: white;
+        }
+
+        .btn-primary:hover {
+          background: #2563eb;
+        }
+
+        .btn-secondary {
+          background: #6b7280;
+          color: white;
+        }
+
+        .btn-secondary:hover {
+          background: #4b5563;
+        }
+
+        .btn-success {
+          background: #10b981;
+          color: white;
+        }
+
+        .btn-success:hover {
+          background: #059669;
+        }
+
+        .btn-outline {
+          background: transparent;
+          color: #3b82f6;
+          border: 1px solid #3b82f6;
+        }
+
+        .btn-outline:hover {
+          background: #3b82f6;
+          color: white;
         }
 
         @media (max-width: 768px) {
@@ -262,6 +584,18 @@ const Dashboard = ({ user, onLogout }) => {
           
           .action-btn {
             font-size: 1rem;
+          }
+
+          .stories-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .completion-actions {
+            flex-direction: column;
+          }
+
+          .story-types-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
