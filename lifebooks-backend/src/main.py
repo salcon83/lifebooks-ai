@@ -2,7 +2,6 @@ import os
 import io
 import datetime
 import jwt
-import bcrypt
 import openai
 import stripe
 import json
@@ -11,6 +10,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -90,10 +90,10 @@ class User(db.Model):
     last_login = db.Column(db.DateTime)
     
     def set_password(self, password):
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        self.password_hash = generate_password_hash(password)
     
     def check_password(self, password):
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+        return check_password_hash(self.password_hash, password)
     
     def check_usage_limit(self, feature):
         # Reset monthly usage if needed

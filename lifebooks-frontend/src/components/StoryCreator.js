@@ -168,13 +168,15 @@ const StoryCreator = () => {
     }
   };
 
+  const API_BASE_URL = 'https://9yhyi3cq9630.manus.space';
+
   const transcribeAudio = async (audioBlob) => {
     setIsLoading(true);
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       
-      const response = await fetch('/api/transcribe', {
+      const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -248,7 +250,7 @@ const StoryCreator = () => {
     setCurrentStep(4);
     
     try {
-      const response = await fetch('/api/generate-story', {
+      const response = await fetch(`${API_BASE_URL}/api/generate-story`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -289,7 +291,7 @@ const StoryCreator = () => {
   const saveStory = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/story', {
+      const response = await fetch(`${API_BASE_URL}/api/story`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
