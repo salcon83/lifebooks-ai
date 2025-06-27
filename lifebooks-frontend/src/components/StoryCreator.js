@@ -169,12 +169,14 @@ const StoryCreator = () => {
     }
   };
 
-  const API_BASE_URL = 'https://5001-itl2cnh02l1oonq7mrlka-9a32bb50.manusvm.computer';
+  const API_BASE_URL = 'https://5001-i3ze25ku0nd9zq2nuuwwz-9a32bb50.manusvm.computer';
   
   const transcribeAudio = async (audioBlob) => {
     if (!audioBlob) return;
     
     setIsLoading(true);
+    setTranscription(''); // Clear any existing transcription
+    
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
@@ -183,22 +185,25 @@ const StoryCreator = () => {
         method: 'POST',
         body: formData,
         headers: {
-          'Authorization': `Bearer demo-token`
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3NTE2NzEzNDh9.5_s2csJ1tKwdiVCeKSUjeXcfEYbBW53ZLzKP92xLAFo`
         }
       });
       
       if (response.ok) {
         const data = await response.json();
-        const transcribedText = data.transcription || data.text || 'Transcription completed';
-        setTranscription(transcribedText);
-        setCurrentAnswer(prev => prev + ' ' + transcribedText);
+        const transcribedText = data.transcription || data.text;
+        if (transcribedText) {
+          setTranscription(transcribedText);
+          setCurrentAnswer(prev => prev + ' ' + transcribedText);
+        } else {
+          setTranscription('Recording processed. No speech detected.');
+        }
       } else {
-        // If backend transcription fails, try a simple fallback
-        setTranscription("Voice recorded successfully. Transcription service temporarily unavailable.");
+        setTranscription('Recording completed. Transcription service unavailable.');
       }
     } catch (error) {
       console.error('Transcription error:', error);
-      setTranscription("Voice recorded successfully. Transcription service temporarily unavailable.");
+      setTranscription('Recording completed. Unable to connect to transcription service.');
     }
     setIsLoading(false);
   };
@@ -210,7 +215,7 @@ const StoryCreator = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer demo-token`
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJleHAiOjE3NTE2NzEzNDh9.5_s2csJ1tKwdiVCeKSUjeXcfEYbBW53ZLzKP92xLAFo`
         },
         body: JSON.stringify({
           text: originalText,
