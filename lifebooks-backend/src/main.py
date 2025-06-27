@@ -509,3 +509,51 @@ def generate_story():
             "error": str(e)
         }), 500
 
+
+# Text enhancement endpoint
+@app.route('/api/enhance-text', methods=['POST'])
+def enhance_text():
+    try:
+        data = request.get_json()
+        text = data.get('text', '')
+        enhancement_type = data.get('enhancement_type', 'general')
+        
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
+        
+        # Use OpenAI to enhance the text
+        import openai
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        if enhancement_type == 'storytelling':
+            prompt = f"""Please enhance the following text for storytelling purposes. Improve grammar, clarity, and narrative flow while preserving the authentic voice and meaning. Make it more engaging and well-structured for a life story:
+
+Text to enhance: {text}
+
+Enhanced version:"""
+        else:
+            prompt = f"""Please improve the following text for clarity, grammar, and readability while preserving the original meaning and voice:
+
+Text to enhance: {text}
+
+Improved version:"""
+        
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            max_tokens=500,
+            temperature=0.7
+        )
+        
+        enhanced_text = response.choices[0].text.strip()
+        
+        return jsonify({
+            'enhanced_text': enhanced_text,
+            'original_text': text,
+            'enhancement_type': enhancement_type
+        })
+        
+    except Exception as e:
+        print(f"Enhancement error: {str(e)}")
+        return jsonify({'error': 'Enhancement failed', 'details': str(e)}), 500
+

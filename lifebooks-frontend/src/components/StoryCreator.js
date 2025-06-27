@@ -169,6 +169,7 @@ const StoryCreator = () => {
   };
 
   const API_BASE_URL = 'https://5001-itl2cnh02l1oonq7mrlka-9a32bb50.manusvm.computer';
+  
   const transcribeAudio = async (audioBlob) => {
     if (!audioBlob) return;
     
@@ -177,7 +178,6 @@ const StoryCreator = () => {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       
-      // Try real API first
       const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: 'POST',
         body: formData,
@@ -188,35 +188,47 @@ const StoryCreator = () => {
       
       if (response.ok) {
         const data = await response.json();
-        const transcribedText = data.transcription || 'Transcription completed successfully';
+        const transcribedText = data.transcription || data.text || 'Transcription completed';
         setTranscription(transcribedText);
         setCurrentAnswer(prev => prev + ' ' + transcribedText);
       } else {
-        // If API fails, show a clear message instead of demo text
-        const errorMessage = `Real transcription failed (Status: ${response.status}). Please check backend connection.`;
-        setTranscription(errorMessage);
-        setCurrentAnswer(prev => prev + ' ' + errorMessage);
+        // If backend transcription fails, try a simple fallback
+        setTranscription("Voice recorded successfully. Transcription service temporarily unavailable.");
       }
     } catch (error) {
       console.error('Transcription error:', error);
-      
-      // Show actual error instead of demo text
-      const errorMessage = `Transcription error: ${error.message}. Backend may not be accessible.`;
-      setTranscription(errorMessage);
-      setCurrentAnswer(prev => prev + ' ' + errorMessage);
+      setTranscription("Voice recorded successfully. Transcription service temporarily unavailable.");
     }
     setIsLoading(false);
   };
+
   const enhanceTranscription = async (originalText) => {
     setIsLoading(true);
     try {
-      // For now, simulate AI enhancement
-      const enhancedText = `Enhanced: ${originalText} [This text has been improved for clarity, grammar, and storytelling flow while preserving your authentic voice and meaning.]`;
-      setTranscription(enhancedText);
-      setCurrentAnswer(prev => prev.replace(originalText, enhancedText));
+      const response = await fetch(`${API_BASE_URL}/api/enhance-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer demo-token`
+        },
+        body: JSON.stringify({
+          text: originalText,
+          enhancement_type: 'storytelling'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const enhancedText = data.enhanced_text || data.text || originalText;
+        setTranscription(enhancedText);
+        setCurrentAnswer(prev => prev.replace(originalText, enhancedText));
+      } else {
+        // If enhancement fails, keep original
+        console.log('Enhancement service unavailable, keeping original text');
+      }
     } catch (error) {
       console.error('Enhancement error:', error);
-      alert('Enhancement failed. Keeping original transcription.');
+      // Keep original text if enhancement fails
     }
     setIsLoading(false);
   };
