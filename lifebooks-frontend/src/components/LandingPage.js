@@ -14,7 +14,7 @@ const LandingPage = ({ onNavigate }) => {
             <div className="hero-buttons">
               <button 
                 className="cta-button primary"
-                onClick={() => onNavigate('register')}
+                onClick={() => onNavigate('create-story')}
               >
                 Start Your Story
               </button>
