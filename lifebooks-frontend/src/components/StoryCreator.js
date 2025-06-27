@@ -169,20 +169,20 @@ const StoryCreator = () => {
   };
 
   const API_BASE_URL = 'https://5001-itl2cnh02l1oonq7mrlka-9a32bb50.manusvm.computer';
-
   const transcribeAudio = async (audioBlob) => {
-    setIsLoading(true);
-    setTranscription('');
+    if (!audioBlob) return;
     
+    setIsLoading(true);
     try {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.wav');
       
+      // Try real API first
       const response = await fetch(`${API_BASE_URL}/api/transcribe`, {
         method: 'POST',
         body: formData,
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token') || 'demo-token'}`
+          'Authorization': `Bearer demo-token`
         }
       });
       
@@ -192,25 +192,21 @@ const StoryCreator = () => {
         setTranscription(transcribedText);
         setCurrentAnswer(prev => prev + ' ' + transcribedText);
       } else {
-        const errorData = await response.json().catch(() => ({ message: 'Authentication required' }));
-        console.error('Transcription error:', errorData.message);
-        
-        // Fallback to demo for authentication issues
-        const fallbackText = "Demo transcription: Your voice was recorded successfully. Real transcription requires authentication setup.";
-        setTranscription(fallbackText);
-        setCurrentAnswer(prev => prev + ' ' + fallbackText);
+        // If API fails, show a clear message instead of demo text
+        const errorMessage = `Real transcription failed (Status: ${response.status}). Please check backend connection.`;
+        setTranscription(errorMessage);
+        setCurrentAnswer(prev => prev + ' ' + errorMessage);
       }
     } catch (error) {
       console.error('Transcription error:', error);
       
-      // Fallback to demo for network issues
-      const fallbackText = "Demo transcription: Your voice was recorded successfully. Network error prevented real transcription.";
-      setTranscription(fallbackText);
-      setCurrentAnswer(prev => prev + ' ' + fallbackText);
+      // Show actual error instead of demo text
+      const errorMessage = `Transcription error: ${error.message}. Backend may not be accessible.`;
+      setTranscription(errorMessage);
+      setCurrentAnswer(prev => prev + ' ' + errorMessage);
     }
     setIsLoading(false);
   };
-
   const enhanceTranscription = async (originalText) => {
     setIsLoading(true);
     try {
