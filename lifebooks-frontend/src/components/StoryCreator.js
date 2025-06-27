@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const StoryCreator = () => {
+  // Version 2.0 - Real Whisper Integration
   const [currentStep, setCurrentStep] = useState(1);
   const [storyType, setStoryType] = useState('');
   const [storyTitle, setStoryTitle] = useState('');
@@ -546,8 +547,8 @@ const StoryCreator = () => {
           </div>
 
           {transcription && (
-            <div className="transcription-options">
-              <h4 className="font-medium mb-3">Transcription Preview:</h4>
+            <div className="transcription-result">
+              <h4>🎤 Transcription Result:</h4>
               <div className="transcription-preview">
                 {transcription}
               </div>
