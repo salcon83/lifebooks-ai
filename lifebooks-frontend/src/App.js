@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+
 import LandingPage from './components/LandingPage';
 import Login from './components/Login';
 import Register from './components/Register';
@@ -8,7 +9,10 @@ import StoryEditor from './components/StoryEditor';
 import VoiceRecorder from './components/VoiceRecorder';
 import BookCoverCreator from './components/BookCoverCreator';
 import Publishing from './components/Publishing';
-import StoryTypeSelector from './components/StoryTypeSelector'; // NEW IMPORT
+import StoryTypeSelector from './components/StoryTypeSelector';
+import TermsAndConditions from './components/TermsAndConditions';  // NEW IMPORT
+import PrivacyPolicy from './components/PrivacyPolicy';            // NEW IMPORT
+
 import './App.css';
 
 function App() {
@@ -66,6 +70,9 @@ function App() {
                     <Route path="/voice" element={user ? <VoiceRecorder user={user} /> : <Navigate to="/login" />} />
                     <Route path="/covers" element={user ? <BookCoverCreator user={user} /> : <Navigate to="/login" />} />
                     <Route path="/publish" element={user ? <Publishing user={user} /> : <Navigate to="/login" />} />
+                    {/* NEW ROUTES FOR LEGAL PAGES */}
+                    <Route path="/terms" element={<TermsAndConditions />} />
+                    <Route path="/privacy" element={<PrivacyPolicy />} />
                 </Routes>
             </div>
         </Router>
