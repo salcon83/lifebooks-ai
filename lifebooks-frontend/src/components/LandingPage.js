@@ -129,7 +129,7 @@ const LandingPage = ({ onNavigate }) => {
       <style jsx>{`
         .landing-page {
           min-height: 100vh;
-          background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
+          background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
         }
 
         .hero-section {
@@ -180,7 +180,7 @@ const LandingPage = ({ onNavigate }) => {
 
         .cta-button.primary {
           background: white;
-          color: #ff7e5f;
+          color: #4F46E5;
         }
 
         .cta-button.primary:hover {
@@ -196,7 +196,7 @@ const LandingPage = ({ onNavigate }) => {
 
         .cta-button.secondary:hover {
           background: white;
-          color: #ff7e5f;
+          color: #4F46E5;
         }
 
         .hero-image {
