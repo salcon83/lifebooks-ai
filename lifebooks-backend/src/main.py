@@ -585,3 +585,265 @@ Improved version:"""
         print(f"Enhancement error: {str(e)}")
         return jsonify({'error': 'Enhancement failed', 'details': str(e)}), 500
 
+
+
+# AI Interviewer System Integration
+import json
+import uuid
+from datetime import datetime
+
+# In-memory storage for AI interview sessions (in production, use a database)
+ai_sessions = {}
+
+@app.route("/api/lifebooks-integration", methods=["POST"])
+def lifebooks_integration():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    data = request.get_json()
+    action = data.get("action")
+    
+    if action == "start_ai_interview":
+        # Create new AI interview session
+        session_id = str(uuid.uuid4())
+        
+        # Load the ghostwriter system prompt
+        try:
+            with open('/home/ubuntu/lifebooks_ai_system/prompts/ghostwriter_system_prompt.txt', 'r') as f:
+                system_prompt = f.read()
+        except FileNotFoundError:
+            system_prompt = """You are a professional ghostwriter who specializes in helping people tell their most important stories. You conduct empathetic, caring interviews that feel like conversations with a trusted friend who happens to be an expert storyteller.
+
+Your approach is warm, patient, and deeply curious about the human experience. You ask thoughtful follow-up questions, validate emotions, and help people discover the deeper meaning in their experiences."""
+        
+        # Initialize session
+        ai_sessions[session_id] = {
+            'user_id': user.id,
+            'created_at': datetime.utcnow().isoformat(),
+            'phase': 'discovery',
+            'story_type': None,
+            'themes': [],
+            'messages': [],
+            'system_prompt': system_prompt
+        }
+        
+        # Generate initial greeting
+        initial_message = """Hello! I'm so glad you're here. I'm a professional ghostwriter who specializes in helping people tell their most important stories.
+
+I want you to know that this is a safe space where your story - whatever it is - will be honored and treated with the care it deserves. There are no wrong answers, no judgment, and we can go at whatever pace feels right for you.
+
+My role is to be your guide and companion as we explore your experiences together. I'll ask thoughtful questions, listen deeply, and help you discover the beauty and meaning in your own story.
+
+Let's begin with something simple: What brings you here today? What's calling you to tell a story?"""
+        
+        return jsonify({
+            "success": True,
+            "session_id": session_id,
+            "initial_message": initial_message
+        })
+    
+    return jsonify({"message": "Invalid action"}), 400
+
+@app.route("/api/process-response", methods=["POST"])
+def process_response():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    data = request.get_json()
+    session_id = data.get("session_id")
+    message = data.get("message")
+    
+    if not session_id or session_id not in ai_sessions:
+        return jsonify({"message": "Invalid session"}), 400
+    
+    session = ai_sessions[session_id]
+    
+    # Add user message to session
+    session['messages'].append({
+        'role': 'user',
+        'content': message,
+        'timestamp': datetime.utcnow().isoformat()
+    })
+    
+    try:
+        # Use OpenAI to generate AI response
+        import openai
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Build conversation context
+        messages = [
+            {"role": "system", "content": session['system_prompt']},
+        ]
+        
+        # Add recent conversation history
+        for msg in session['messages'][-10:]:  # Last 10 messages for context
+            messages.append({
+                "role": "user" if msg['role'] == 'user' else "assistant",
+                "content": msg['content']
+            })
+        
+        # Generate response
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            max_tokens=500,
+            temperature=0.8
+        )
+        
+        ai_response = response.choices[0].message.content.strip()
+        
+        # Add AI response to session
+        session['messages'].append({
+            'role': 'ai',
+            'content': ai_response,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
+        # Analyze response to update session state
+        session = analyze_and_update_session(session, message, ai_response)
+        
+        return jsonify({
+            "message": ai_response,
+            "phase": session['phase'],
+            "story_type": session['story_type'],
+            "themes": session['themes']
+        })
+        
+    except Exception as e:
+        print(f"AI response error: {str(e)}")
+        return jsonify({"message": "I'm having trouble processing your response right now. Could you please try again?"}), 500
+
+def analyze_and_update_session(session, user_message, ai_response):
+    """Analyze the conversation to update session state"""
+    
+    # Simple keyword-based analysis (in production, use more sophisticated NLP)
+    user_lower = user_message.lower()
+    
+    # Detect story type
+    if not session['story_type']:
+        if any(word in user_lower for word in ['life story', 'autobiography', 'whole life', 'childhood']):
+            session['story_type'] = 'autobiography'
+        elif any(word in user_lower for word in ['memoir', 'experience', 'period', 'time when']):
+            session['story_type'] = 'memoir'
+        elif any(word in user_lower for word in ['family', 'heritage', 'ancestors', 'generations']):
+            session['story_type'] = 'family_history'
+        elif any(word in user_lower for word in ['travel', 'journey', 'trip', 'adventure']):
+            session['story_type'] = 'travel_stories'
+        elif any(word in user_lower for word in ['career', 'work', 'professional', 'job']):
+            session['story_type'] = 'professional_journey'
+    
+    # Detect themes
+    theme_keywords = {
+        'resilience': ['overcome', 'challenge', 'difficult', 'struggle', 'persevere'],
+        'love': ['love', 'relationship', 'family', 'marriage', 'children'],
+        'growth': ['learn', 'grow', 'change', 'transform', 'discover'],
+        'loss': ['loss', 'grief', 'death', 'goodbye', 'miss'],
+        'achievement': ['success', 'accomplish', 'achieve', 'proud', 'goal'],
+        'courage': ['brave', 'courage', 'fear', 'risk', 'bold']
+    }
+    
+    for theme, keywords in theme_keywords.items():
+        if any(keyword in user_lower for keyword in keywords) and theme not in session['themes']:
+            session['themes'].append(theme)
+    
+    # Update phase based on conversation length and content
+    message_count = len(session['messages'])
+    if message_count < 6:
+        session['phase'] = 'discovery'
+    elif message_count < 12:
+        session['phase'] = 'exploration'
+    elif message_count < 18:
+        session['phase'] = 'deepening'
+    elif message_count < 24:
+        session['phase'] = 'integration'
+    else:
+        session['phase'] = 'wisdom_extraction'
+    
+    return session
+
+@app.route("/api/generate-outline", methods=["POST"])
+def generate_outline():
+    user = get_user_from_token(request)
+    if not user:
+        return jsonify({"message": "Authentication required"}), 401
+    
+    data = request.get_json()
+    session_id = data.get("session_id")
+    
+    if not session_id or session_id not in ai_sessions:
+        return jsonify({"message": "Invalid session"}), 400
+    
+    session = ai_sessions[session_id]
+    
+    try:
+        # Extract user responses from conversation
+        user_responses = [msg['content'] for msg in session['messages'] if msg['role'] == 'user']
+        conversation_text = '\n\n'.join(user_responses)
+        
+        # Use OpenAI to generate book outline
+        import openai
+        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        prompt = f"""Based on this interview conversation, create a detailed book outline:
+
+Story Type: {session['story_type'] or 'Personal Story'}
+Themes: {', '.join(session['themes'])}
+
+Conversation Content:
+{conversation_text}
+
+Please create a book outline with:
+1. A compelling title
+2. Book type and estimated length
+3. 6-8 chapter titles with brief descriptions
+4. Key themes to explore
+
+Format as JSON with this structure:
+{{
+    "title": "Book Title",
+    "book_type": "memoir/autobiography/etc",
+    "estimated_length": "pages/words",
+    "themes": ["theme1", "theme2"],
+    "chapters": [
+        {{"title": "Chapter Title", "theme": "What this chapter explores"}}
+    ]
+}}"""
+        
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1000,
+            temperature=0.7
+        )
+        
+        outline_text = response.choices[0].message.content.strip()
+        
+        # Try to parse as JSON, fallback to text if needed
+        try:
+            outline = json.loads(outline_text)
+        except:
+            # Fallback outline structure
+            outline = {
+                "title": f"My {session['story_type'] or 'Personal'} Story",
+                "book_type": session['story_type'] or 'memoir',
+                "estimated_length": "150-200 pages",
+                "themes": session['themes'],
+                "chapters": [
+                    {"title": "The Beginning", "theme": "Setting the stage for your story"},
+                    {"title": "The Journey", "theme": "Key experiences and turning points"},
+                    {"title": "Lessons Learned", "theme": "Wisdom gained from your experiences"},
+                    {"title": "Looking Forward", "theme": "How your story continues"}
+                ]
+            }
+        
+        return jsonify(outline)
+        
+    except Exception as e:
+        print(f"Outline generation error: {str(e)}")
+        return jsonify({"message": "Failed to generate outline"}), 500
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)
+

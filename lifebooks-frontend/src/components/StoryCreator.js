@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const StoryCreator = () => {
-  // Version 2.0 - Real Whisper Integration
+  // Version 3.0 - AI Interviewer Integration
   const [currentStep, setCurrentStep] = useState(1);
   const [storyType, setStoryType] = useState('');
   const [storyTitle, setStoryTitle] = useState('');
+  const [interviewMode, setInterviewMode] = useState(''); // 'ai' or 'traditional'
+  const [aiSessionId, setAiSessionId] = useState(null);
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiPhase, setAiPhase] = useState('discovery');
+  const [aiStoryType, setAiStoryType] = useState(null);
+  const [aiThemes, setAiThemes] = useState([]);
   const [aiQuestions, setAiQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -293,6 +299,155 @@ const StoryCreator = () => {
 
   const generateStory = async () => {
     setIsLoading(true);
+    setCurrentStep(5);
+    
+    // Simulate story generation
+    setTimeout(() => {
+      const sampleStory = `# ${storyTitle}\n\nThis is the beginning of your ${storyTypes[storyType]?.name.toLowerCase()} story...\n\n${Object.values(answers).join('\n\n')}`;
+      setGeneratedStory(sampleStory);
+      setEditedStory(sampleStory);
+      setIsLoading(false);
+    }, 3000);
+  };
+
+  // AI Interviewer Functions
+  const startAIInterview = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/lifebooks-integration`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer demo-token`
+        },
+        body: JSON.stringify({
+          action: 'start_ai_interview'
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setAiSessionId(data.session_id);
+          setAiMessages([{
+            role: 'ai',
+            content: data.initial_message,
+            timestamp: new Date().toISOString()
+          }]);
+          setInterviewMode('ai');
+          setCurrentStep(3);
+        }
+      } else {
+        console.error('Failed to start AI interview');
+        // Fallback to traditional interview
+        setInterviewMode('traditional');
+        setAiQuestions(storyTypes[storyType]?.questions || []);
+        setCurrentStep(3);
+      }
+    } catch (error) {
+      console.error('Error starting AI interview:', error);
+      // Fallback to traditional interview
+      setInterviewMode('traditional');
+      setAiQuestions(storyTypes[storyType]?.questions || []);
+      setCurrentStep(3);
+    }
+    setIsLoading(false);
+  };
+
+  const sendAIMessage = async (message) => {
+    if (!message.trim() || !aiSessionId) return;
+    
+    // Add user message to conversation
+    const userMessage = {
+      role: 'user',
+      content: message,
+      timestamp: new Date().toISOString()
+    };
+    setAiMessages(prev => [...prev, userMessage]);
+    setCurrentAnswer('');
+    setIsLoading(true);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/process-response`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer demo-token`
+        },
+        body: JSON.stringify({
+          session_id: aiSessionId,
+          message: message
+        })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Add AI response to conversation
+        const aiMessage = {
+          role: 'ai',
+          content: data.message,
+          timestamp: new Date().toISOString()
+        };
+        setAiMessages(prev => [...prev, aiMessage]);
+        
+        // Update interview state
+        setAiPhase(data.phase);
+        setAiStoryType(data.story_type);
+        setAiThemes(data.themes || []);
+        
+        // Check if interview is complete
+        if (data.phase === 'wisdom_extraction' && data.message.includes('ready for me to begin crafting')) {
+          // Interview complete, offer to generate book
+          setTimeout(() => {
+            setCurrentStep(4);
+          }, 2000);
+        }
+      } else {
+        console.error('Failed to process AI response');
+      }
+    } catch (error) {
+      console.error('Error sending AI message:', error);
+    }
+    setIsLoading(false);
+  };
+
+  const generateAIBookOutline = async () => {
+    if (!aiSessionId) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/generate-outline`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer demo-token`
+        },
+        body: JSON.stringify({
+          session_id: aiSessionId
+        })
+      });
+      
+      if (response.ok) {
+        const outline = await response.json();
+        
+        // Convert outline to story format
+        const storyContent = `# ${outline.title || storyTitle}\n\n## Book Outline\n\n**Story Type:** ${outline.book_type}\n**Estimated Length:** ${outline.estimated_length}\n**Key Themes:** ${outline.themes?.join(', ')}\n\n### Chapters:\n\n${outline.chapters?.map((chapter, index) => 
+          `**Chapter ${index + 1}: ${chapter.title}**\n${chapter.theme}\n`
+        ).join('\n') || 'Chapters will be generated based on your interview content.'}\n\n## Your Story\n\nBased on our conversation, here's the beginning of your story...\n\n${aiMessages.filter(msg => msg.role === 'user').map(msg => msg.content).join('\n\n')}`;
+        
+        setGeneratedStory(storyContent);
+        setEditedStory(storyContent);
+        setCurrentStep(5);
+      }
+    } catch (error) {
+      console.error('Error generating AI book outline:', error);
+    }
+    setIsLoading(false);
+  };
+
+  const generateStoryFromTraditional = async () => {
+    setIsLoading(true);
     setCurrentStep(4);
     
     try {
@@ -479,126 +634,284 @@ const StoryCreator = () => {
           </div>
         )}
 
-        <button
-          onClick={() => setCurrentStep(3)}
-          disabled={!storyTitle.trim()}
-          className="w-full bg-orange-500 text-white py-4 rounded-lg text-lg font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-        >
-          Start AI Interview
-        </button>
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-center">Choose Your Interview Experience</h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button
+              onClick={startAIInterview}
+              disabled={!storyTitle.trim()}
+              className="p-6 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all transform hover:scale-105"
+            >
+              <div className="text-3xl mb-2">🤖</div>
+              <div className="text-lg font-bold mb-2">AI Ghostwriter Interview</div>
+              <div className="text-sm opacity-90">Professional ghostwriter-style conversation that adapts to your responses and guides you through your story naturally</div>
+            </button>
+            
+            <button
+              onClick={() => {
+                setInterviewMode('traditional');
+                setAiQuestions(storyTypes[storyType]?.questions || []);
+                setCurrentStep(3);
+              }}
+              disabled={!storyTitle.trim()}
+              className="p-6 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg font-semibold hover:from-orange-600 hover:to-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all transform hover:scale-105"
+            >
+              <div className="text-3xl mb-2">📝</div>
+              <div className="text-lg font-bold mb-2">Traditional Q&A</div>
+              <div className="text-sm opacity-90">Structured questions specific to your story type with voice recording and document upload</div>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 
-  const renderAIInterview = () => (
-    <div className="max-w-4xl mx-auto">
-      <h2 className="text-3xl font-bold text-center mb-8">AI Interview</h2>
-      
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <div className="flex justify-between items-center mb-6">
-          <span className="text-sm text-gray-500">
-            Question {currentQuestionIndex + 1} of {aiQuestions.length}
-          </span>
-          <div className="w-64 bg-gray-200 rounded-full h-2">
-            <div 
-              className="bg-orange-500 h-2 rounded-full transition-all"
-              style={{ width: `${((currentQuestionIndex + 1) / aiQuestions.length) * 100}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4 text-gray-800">
-            {aiQuestions[currentQuestionIndex]}
-          </h3>
-        </div>
-
-        <div className="space-y-6">
-          <div>
-            <label className="block text-lg font-medium mb-2">Your Answer</label>
-            <textarea
-              value={currentAnswer}
-              onChange={(e) => setCurrentAnswer(e.target.value)}
-              placeholder="Type your answer here, or use voice recording below..."
-              className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-            />
-          </div>
-
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
-                isRecording 
-                  ? 'bg-red-500 text-white hover:bg-red-600' 
-                  : 'bg-blue-500 text-white hover:bg-blue-600'
-              }`}
-            >
-              <span>{isRecording ? '🛑' : '🎤'}</span>
-              <span>{isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start Recording'}</span>
-            </button>
-
-            {audioBlob && (
-              <button
-                onClick={() => {
-                  const audio = new Audio(URL.createObjectURL(audioBlob));
-                  audio.play();
-                }}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                <span>▶️</span>
-                <span>Play Recording</span>
-              </button>
-            )}
-          </div>
-
-          {transcription && (
-            <div className="transcription-result">
-              <h4>🎤 Transcription Result:</h4>
-              <div className="transcription-preview">
-                {transcription}
+  const renderAIInterview = () => {
+    if (interviewMode === 'ai') {
+      return (
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-4">
+                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
+                  AI Ghostwriter Interview
+                </span>
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                  Phase: {aiPhase.replace('_', ' ').toUpperCase()}
+                </span>
               </div>
-              
-              <div className="enhancement-buttons">
+              {aiStoryType && (
+                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
+                  {aiStoryType.replace('_', ' ').toUpperCase()}
+                </span>
+              )}
+            </div>
+
+            {aiThemes.length > 0 && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium text-gray-700 mb-2">Themes Identified:</h4>
+                <div className="flex flex-wrap gap-2">
+                  {aiThemes.map((theme, index) => (
+                    <span key={index} className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm">
+                      {theme}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-6 mb-8 max-h-96 overflow-y-auto">
+              {aiMessages.map((message, index) => (
+                <div key={index} className={`p-4 rounded-lg ${
+                  message.role === 'ai' 
+                    ? 'bg-blue-50 border-l-4 border-blue-500' 
+                    : 'bg-gray-50 border-l-4 border-gray-500 ml-8'
+                }`}>
+                  <div className="flex items-center space-x-2 mb-2">
+                    <span className="font-medium">
+                      {message.role === 'ai' ? '🤖 AI Interviewer' : '👤 You'}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="text-gray-800 whitespace-pre-wrap">
+                    {message.content}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <textarea
+                  value={currentAnswer}
+                  onChange={(e) => setCurrentAnswer(e.target.value)}
+                  placeholder="Share your thoughts here..."
+                  className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex items-center space-x-4">
                 <button
-                  onClick={() => enhanceTranscription(transcription)}
-                  className="btn btn-primary"
-                  disabled={isLoading}
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
+                    isRecording 
+                      ? 'bg-red-500 text-white hover:bg-red-600' 
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
                 >
-                  ✨ Let AI Enhance It
+                  <span>{isRecording ? '🛑' : '🎤'}</span>
+                  <span>{isRecording ? `Recording ${formatTime(recordingTime)}` : 'Voice Recording'}</span>
                 </button>
+
+                {audioBlob && (
+                  <button
+                    onClick={() => {
+                      const audio = new Audio(URL.createObjectURL(audioBlob));
+                      audio.play();
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    <span>▶️</span>
+                    <span>Play Recording</span>
+                  </button>
+                )}
+
                 <button
-                  onClick={() => keepTranscriptionAsIs()}
-                  className="btn btn-secondary"
+                  onClick={() => sendAIMessage(currentAnswer)}
+                  disabled={!currentAnswer.trim() || isLoading}
+                  className="px-6 py-3 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                 >
-                  ✓ Keep As Is
+                  {isLoading ? 'Processing...' : 'Send Response'}
+                </button>
+              </div>
+
+              {transcription && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <h4 className="font-medium text-green-800 mb-2">🎤 Transcription:</h4>
+                  <p className="text-green-700 mb-3">{transcription}</p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => enhanceTranscription(transcription)}
+                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
+                      disabled={isLoading}
+                    >
+                      ✨ Enhance with AI
+                    </button>
+                    <button
+                      onClick={keepTranscriptionAsIs}
+                      className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                    >
+                      ✓ Keep As Is
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {aiPhase === 'wisdom_extraction' && aiMessages.length > 10 && (
+                <div className="text-center">
+                  <button
+                    onClick={generateAIBookOutline}
+                    className="px-8 py-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105"
+                  >
+                    Generate My Book 📚
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    } else {
+      // Traditional Q&A Mode
+      return (
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-8">Story Interview</h2>
+          
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-sm text-gray-500">
+                Question {currentQuestionIndex + 1} of {aiQuestions.length}
+              </span>
+              <div className="w-64 bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-orange-500 h-2 rounded-full transition-all"
+                  style={{ width: `${((currentQuestionIndex + 1) / aiQuestions.length) * 100}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-4 text-gray-800">
+                {aiQuestions[currentQuestionIndex]}
+              </h3>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-lg font-medium mb-2">Your Answer</label>
+                <textarea
+                  value={currentAnswer}
+                  onChange={(e) => setCurrentAnswer(e.target.value)}
+                  placeholder="Type your answer here, or use voice recording below..."
+                  className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                />
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
+                    isRecording 
+                      ? 'bg-red-500 text-white hover:bg-red-600' 
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                >
+                  <span>{isRecording ? '🛑' : '🎤'}</span>
+                  <span>{isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start Recording'}</span>
+                </button>
+
+                {audioBlob && (
+                  <button
+                    onClick={() => {
+                      const audio = new Audio(URL.createObjectURL(audioBlob));
+                      audio.play();
+                    }}
+                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    <span>▶️</span>
+                    <span>Play Recording</span>
+                  </button>
+                )}
+              </div>
+
+              {transcription && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <h4 className="font-medium text-green-800 mb-2">🎤 Transcription Result:</h4>
+                  <p className="text-green-700 mb-3">{transcription}</p>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => enhanceTranscription(transcription)}
+                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
+                      disabled={isLoading}
+                    >
+                      ✨ Let AI Enhance It
+                    </button>
+                    <button
+                      onClick={keepTranscriptionAsIs}
+                      className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                    >
+                      ✓ Keep As Is
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-between">
+                <button
+                  onClick={previousQuestion}
+                  disabled={currentQuestionIndex === 0}
+                  className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ← Previous
+                </button>
+                
+                <button
+                  onClick={nextQuestion}
+                  disabled={!currentAnswer.trim()}
+                  className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  {currentQuestionIndex === aiQuestions.length - 1 ? 'Generate Story' : 'Next →'}
                 </button>
               </div>
             </div>
-          )}
-
-          <div className="flex justify-between">
-            <button
-              onClick={previousQuestion}
-              disabled={currentQuestionIndex === 0}
-              className="flex items-center space-x-2 px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>⬅️</span>
-              <span>Previous</span>
-            </button>
-
-            <button
-              onClick={nextQuestion}
-              disabled={!currentAnswer.trim()}
-              className="flex items-center space-x-2 px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              <span>{currentQuestionIndex === aiQuestions.length - 1 ? 'Generate Story' : 'Next'}</span>
-              <span>➡️</span>
-            </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
+      );
+    }
+  };
 
   const renderStoryGeneration = () => (
     <div className="max-w-4xl mx-auto">
