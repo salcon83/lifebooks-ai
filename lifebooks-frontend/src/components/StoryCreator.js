@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const StoryCreator = () => {
-  // Version 3.0 - AI Interviewer Integration
+  // Version 3.1 - AI Interviewer Integration - Force Deploy
   const [currentStep, setCurrentStep] = useState(1);
   const [storyType, setStoryType] = useState('');
   const [storyTitle, setStoryTitle] = useState('');
