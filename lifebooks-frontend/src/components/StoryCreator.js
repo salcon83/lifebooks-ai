@@ -5,7 +5,7 @@ const StoryCreator = () => {
   const [currentStep, setCurrentStep] = useState(1);
   const [storyType, setStoryType] = useState('');
   const [storyTitle, setStoryTitle] = useState('');
-  const [interviewMode, setInterviewMode] = useState(''); // 'ai' or 'traditional'
+  const [interviewMode, setInterviewMode] = useState('ai'); // Default to AI mode
   const [aiSessionId, setAiSessionId] = useState(null);
   const [aiMessages, setAiMessages] = useState([]);
   const [aiPhase, setAiPhase] = useState('discovery');
