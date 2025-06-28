@@ -552,9 +552,7 @@ const StoryCreator = () => {
               setStoryType(key);
               setCurrentStep(2);
             }}
-            className={`p-6 rounded-lg border-2 cursor-pointer transition-all hover:scale-105 ${
-              storyType === key ? 'border-orange-500 bg-orange-50' : 'border-gray-200 hover:border-orange-300'
-            }`}
+            className={`story-type-card ${storyType === key ? 'selected' : ''}`}
           >
             <div className={`w-12 h-12 rounded-lg ${type.color} mb-4 flex items-center justify-center`}>
               <span className="text-white text-2xl">📖</span>
@@ -715,20 +713,14 @@ const StoryCreator = () => {
           </div>
 
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+          <div className="chat-container">
             {aiMessages.map((message, index) => (
-              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                  message.role === 'user' 
-                    ? 'bg-purple-500 text-white' 
-                    : 'bg-white text-gray-800 shadow-sm border'
-                }`}>
-                  <div className="text-sm whitespace-pre-wrap">
+              <div key={index} className={`chat-message ${message.role}`}>
+                <div className={`chat-bubble ${message.role}`}>
+                  <div className="whitespace-pre-wrap">
                     {message.content}
                   </div>
-                  <div className={`text-xs mt-1 ${
-                    message.role === 'user' ? 'text-purple-100' : 'text-gray-500'
-                  }`}>
+                  <div className="text-xs mt-1 opacity-70">
                     {new Date(message.timestamp).toLocaleTimeString()}
                   </div>
                   
@@ -737,14 +729,14 @@ const StoryCreator = () => {
                     <div className="mt-2 flex space-x-2">
                       <button
                         onClick={() => enhanceMessage(index, message.content)}
-                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded text-white"
+                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded"
                         disabled={isLoading}
                       >
                         ✨ Enhance
                       </button>
                       <button
                         onClick={() => editMessage(index)}
-                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded text-white"
+                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded"
                       >
                         ✏️ Edit
                       </button>
@@ -805,42 +797,43 @@ const StoryCreator = () => {
               </div>
             )}
 
-            <div className="flex items-end space-x-3">
-              <div className="flex-1">
-                <textarea
-                  value={currentAnswer}
-                  onChange={(e) => setCurrentAnswer(e.target.value)}
-                  placeholder="Share your thoughts... (or use voice recording)"
-                  className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                  rows="3"
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      if (currentAnswer.trim()) {
-                        sendAIMessage(currentAnswer);
-                      }
+            <div className="chat-input-container">
+              <textarea
+                value={currentAnswer}
+                onChange={(e) => setCurrentAnswer(e.target.value)}
+                placeholder="Share your thoughts... (or use voice recording)"
+                className="chat-input"
+                rows="3"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (currentAnswer.trim()) {
+                      sendAIMessage(currentAnswer);
                     }
-                  }}
-                />
-              </div>
+                  }
+                }}
+              />
               
               <div className="flex flex-col space-y-2">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
-                  className={`p-3 rounded-lg font-semibold transition-colors ${
-                    isRecording 
-                      ? 'bg-red-500 text-white hover:bg-red-600' 
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                  }`}
+                  className={`voice-recording-btn ${isRecording ? 'recording' : ''}`}
                   title={isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start voice recording'}
                 >
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    {isRecording ? (
+                      <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    ) : (
+                      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    )}
+                  </svg>
                   {isRecording ? '🛑' : '🎤'}
                 </button>
                 
                 <button
                   onClick={() => sendAIMessage(currentAnswer)}
                   disabled={!currentAnswer.trim() || isLoading}
-                  className="p-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  className="chat-send-btn"
                   title="Send message"
                 >
                   ➤
@@ -1118,18 +1111,27 @@ const StoryCreator = () => {
                 />
               </div>
 
-              <div className="flex items-center space-x-4">
+              <div className="voice-recording-container">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
-                    isRecording 
-                      ? 'bg-red-500 text-white hover:bg-red-600' 
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
-                  }`}
+                  className={`voice-recording-btn ${isRecording ? 'recording' : ''}`}
                 >
-                  <span>{isRecording ? '🛑' : '🎤'}</span>
-                  <span>{isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start Recording'}</span>
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    {isRecording ? (
+                      <rect x="6" y="6" width="12" height="12" rx="2"/>
+                    ) : (
+                      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    )}
+                  </svg>
                 </button>
+                <div className={`recording-status ${isRecording ? 'active' : ''}`}>
+                  {isRecording ? 'Stop Recording' : 'Start Recording'}
+                </div>
+                {isRecording && (
+                  <div className="recording-timer">
+                    {formatTime(recordingTime)}
+                  </div>
+                )}
 
                 {audioBlob && (
                   <button
@@ -1137,10 +1139,10 @@ const StoryCreator = () => {
                       const audio = new Audio(URL.createObjectURL(audioBlob));
                       audio.play();
                     }}
-                    className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
+                    className="btn btn-secondary"
+                    style={{marginTop: '12px'}}
                   >
-                    <span>▶️</span>
-                    <span>Play Recording</span>
+                    ▶️ Play Recording
                   </button>
                 )}
               </div>
