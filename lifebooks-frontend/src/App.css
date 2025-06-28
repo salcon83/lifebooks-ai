@@ -72,7 +72,7 @@ body, p, div {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px !important;
+  padding: 0 16px !important;
 }
 
 .navbar-container {
@@ -80,10 +80,12 @@ body, p, div {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .navbar-brand h1 {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 600;
   color: #4F46E5 !important; /* Primary */
   margin: 0;
@@ -92,20 +94,23 @@ body, p, div {
 .navbar-nav {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .nav-button {
   background-color: #4F46E5 !important; /* Primary CTA */
   color: white !important;
   border: none !important;
-  font-size: 16px !important;
+  font-size: 14px !important;
   font-weight: 500 !important;
-  padding: 8px 12px !important;
+  padding: 6px 10px !important;
   border-radius: 6px !important;
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
+  white-space: nowrap;
+  min-width: auto;
 }
 
 .nav-button:hover {
@@ -116,26 +121,58 @@ body, p, div {
 .nav-button.active {
   background-color: #3730A3 !important; /* Darker primary */
   font-weight: 600;
-  text-decoration: underline;
 }
 
-.nav-link {
-  color: #111827 !important;
-  text-decoration: none;
-  font-weight: 500;
-  padding: 8px 12px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+/* Mobile Navigation Fixes */
+@media (max-width: 768px) {
+  .navbar {
+    height: auto !important;
+    min-height: 60px;
+    padding: 8px 12px !important;
+  }
+  
+  .navbar-container {
+    flex-direction: column;
+    gap: 8px;
+    align-items: stretch;
+  }
+  
+  .navbar-brand {
+    text-align: center;
+    margin-bottom: 8px;
+  }
+  
+  .navbar-brand h1 {
+    font-size: 18px;
+  }
+  
+  .navbar-nav {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    width: 100%;
+  }
+  
+  .nav-button {
+    font-size: 12px !important;
+    padding: 8px 4px !important;
+    text-align: center;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 }
 
-.nav-link:hover {
-  color: #4F46E5 !important; /* Primary */
-  background-color: #F3F4F6;
-}
-
-.nav-link.active {
-  color: #4F46E5 !important; /* Primary */
-  text-decoration: underline;
+@media (max-width: 480px) {
+  .navbar-nav {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .nav-button {
+    font-size: 11px !important;
+    padding: 6px 2px !important;
+  }
 }
 
 /* Global Button Styles */

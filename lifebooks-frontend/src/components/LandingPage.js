@@ -129,7 +129,7 @@ const LandingPage = ({ onNavigate }) => {
       <style jsx>{`
         .landing-page {
           min-height: 100vh;
-          background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+          background: linear-gradient(135deg, #F9FAFB 0%, #E5E7EB 100%);
         }
 
         .hero-section {
@@ -137,6 +137,9 @@ const LandingPage = ({ onNavigate }) => {
           min-height: 80vh;
           display: flex;
           align-items: center;
+          background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+          border-radius: 16px;
+          margin: 20px;
         }
 
         .hero-content {

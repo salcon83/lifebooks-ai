@@ -111,7 +111,7 @@ function App() {
         <style jsx>{`
           .password-protection {
             min-height: 100vh;
-            background: linear-gradient(135deg, #ff7e5f 0%, #feb47b 100%);
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
             display: flex;
             align-items: center;
             justify-content: center;
