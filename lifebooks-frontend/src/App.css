@@ -100,12 +100,12 @@ body {
   background: linear-gradient(135deg, #ff3838 0%, #ff2f2f 100%);
 }
 
-/* Navigation Styles */
+/* Navigation Styles - Compact Version */
 .navbar {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(10px);
-  padding: 16px 0;
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+  padding: 8px 0;
+  box-shadow: 0 1px 10px rgba(0, 0, 0, 0.08);
   border-bottom: 1px solid rgba(255, 126, 95, 0.1);
 }
 
@@ -117,11 +117,11 @@ body {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 8px;
 }
 
 .navbar-brand {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 700;
   color: #ff7e5f;
   text-decoration: none;
@@ -129,7 +129,7 @@ body {
 
 .navbar-nav {
   display: flex;
-  gap: 20px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
@@ -139,17 +139,23 @@ body {
   text-decoration: none;
   font-weight: 500;
   transition: all 0.3s ease;
-  padding: 8px 16px;
+  padding: 6px 12px;
   border-radius: 6px;
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .nav-link:hover, .nav-button:hover {
   color: #ff7e5f;
   background: rgba(255, 126, 95, 0.1);
+}
+
+.nav-button.active {
+  color: #ff7e5f;
+  background: rgba(255, 126, 95, 0.15);
+  font-weight: 600;
 }
 
 /* Form Styles */
