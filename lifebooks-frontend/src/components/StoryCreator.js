@@ -670,70 +670,271 @@ const StoryCreator = () => {
   const renderAIInterview = () => {
     if (interviewMode === 'ai') {
       return (
-        <div className="max-w-4xl mx-auto">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center space-x-4">
-                <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm font-medium">
-                  AI Ghostwriter Interview
-                </span>
-                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
-                  Phase: {aiPhase.replace('_', ' ').toUpperCase()}
-                </span>
+        <div className="max-w-4xl mx-auto h-screen flex flex-col">
+          {/* Header */}
+          <div className="bg-white border-b border-gray-200 p-4 flex-shrink-0">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-purple-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-lg">🤖</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">AI Ghostwriter</h3>
+                  <p className="text-sm text-gray-500">
+                    Phase: {aiPhase.replace('_', ' ')} • {aiStoryType ? aiStoryType.replace('_', ' ') : 'Discovering your story'}
+                  </p>
+                </div>
               </div>
-              {aiStoryType && (
-                <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
-                  {aiStoryType.replace('_', ' ').toUpperCase()}
-                </span>
-              )}
+              
+              <div className="flex items-center space-x-2">
+                {aiThemes.length > 0 && (
+                  <div className="flex space-x-1">
+                    {aiThemes.slice(0, 3).map((theme, index) => (
+                      <span key={index} className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full text-xs">
+                        {theme}
+                      </span>
+                    ))}
+                    {aiThemes.length > 3 && (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">
+                        +{aiThemes.length - 3}
+                      </span>
+                    )}
+                  </div>
+                )}
+                
+                <button
+                  onClick={() => setCurrentStep(4)}
+                  className="px-3 py-1 bg-green-500 text-white rounded-lg text-sm hover:bg-green-600"
+                >
+                  Generate Book
+                </button>
+              </div>
             </div>
+          </div>
 
-            {aiThemes.length > 0 && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-2">Themes Identified:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {aiThemes.map((theme, index) => (
-                    <span key={index} className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-sm">
-                      {theme}
-                    </span>
-                  ))}
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+            {aiMessages.map((message, index) => (
+              <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
+                  message.role === 'user' 
+                    ? 'bg-purple-500 text-white' 
+                    : 'bg-white text-gray-800 shadow-sm border'
+                }`}>
+                  <div className="text-sm whitespace-pre-wrap">
+                    {message.content}
+                  </div>
+                  <div className={`text-xs mt-1 ${
+                    message.role === 'user' ? 'text-purple-100' : 'text-gray-500'
+                  }`}>
+                    {new Date(message.timestamp).toLocaleTimeString()}
+                  </div>
+                  
+                  {/* Enhancement options for user messages */}
+                  {message.role === 'user' && message.enhanced !== true && (
+                    <div className="mt-2 flex space-x-2">
+                      <button
+                        onClick={() => enhanceMessage(index, message.content)}
+                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded text-white"
+                        disabled={isLoading}
+                      >
+                        ✨ Enhance
+                      </button>
+                      <button
+                        onClick={() => editMessage(index)}
+                        className="text-xs bg-white bg-opacity-20 hover:bg-opacity-30 px-2 py-1 rounded text-white"
+                      >
+                        ✏️ Edit
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-white text-gray-800 shadow-sm border px-4 py-3 rounded-lg max-w-xs">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
+                    <span className="text-sm text-gray-500">AI is thinking...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Input Area */}
+          <div className="bg-white border-t border-gray-200 p-4 flex-shrink-0">
+            {transcription && (
+              <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-medium text-blue-800 text-sm">🎤 Voice Transcription:</h4>
+                  <button
+                    onClick={() => setTranscription('')}
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <p className="text-blue-700 text-sm mb-3">{transcription}</p>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => enhanceTranscription(transcription)}
+                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:bg-gray-300"
+                    disabled={isLoading}
+                  >
+                    ✨ Enhance & Use
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCurrentAnswer(transcription);
+                      setTranscription('');
+                    }}
+                    className="px-3 py-1 bg-gray-500 text-white rounded text-sm hover:bg-gray-600"
+                  >
+                    Use As Is
+                  </button>
                 </div>
               </div>
             )}
 
-            <div className="space-y-6 mb-8 max-h-96 overflow-y-auto">
-              {aiMessages.map((message, index) => (
-                <div key={index} className={`p-4 rounded-lg ${
-                  message.role === 'ai' 
-                    ? 'bg-blue-50 border-l-4 border-blue-500' 
-                    : 'bg-gray-50 border-l-4 border-gray-500 ml-8'
-                }`}>
-                  <div className="flex items-center space-x-2 mb-2">
-                    <span className="font-medium">
-                      {message.role === 'ai' ? '🤖 AI Interviewer' : '👤 You'}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(message.timestamp).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="text-gray-800 whitespace-pre-wrap">
-                    {message.content}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="space-y-4">
-              <div>
+            <div className="flex items-end space-x-3">
+              <div className="flex-1">
                 <textarea
                   value={currentAnswer}
                   onChange={(e) => setCurrentAnswer(e.target.value)}
-                  placeholder="Share your thoughts here..."
-                  className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Share your thoughts... (or use voice recording)"
+                  className="w-full p-3 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  rows="3"
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      if (currentAnswer.trim()) {
+                        sendAIMessage(currentAnswer);
+                      }
+                    }
+                  }}
                 />
               </div>
+              
+              <div className="flex flex-col space-y-2">
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  className={`p-3 rounded-lg font-semibold transition-colors ${
+                    isRecording 
+                      ? 'bg-red-500 text-white hover:bg-red-600' 
+                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                  }`}
+                  title={isRecording ? `Recording ${formatTime(recordingTime)}` : 'Start voice recording'}
+                >
+                  {isRecording ? '🛑' : '🎤'}
+                </button>
+                
+                <button
+                  onClick={() => sendAIMessage(currentAnswer)}
+                  disabled={!currentAnswer.trim() || isLoading}
+                  className="p-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                  title="Send message"
+                >
+                  ➤
+                </button>
+              </div>
+            </div>
 
-              <div className="flex items-center space-x-4">
+            {/* Quick Actions */}
+            <div className="flex justify-between items-center mt-3 text-sm">
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => sendAIMessage("I'd like to skip this question and come back to it later.")}
+                  className="text-gray-600 hover:text-purple-600 transition-colors"
+                  disabled={isLoading}
+                >
+                  ⏭️ Skip Question
+                </button>
+                <button
+                  onClick={() => sendAIMessage("Can we go back to a previous topic?")}
+                  className="text-gray-600 hover:text-purple-600 transition-colors"
+                  disabled={isLoading}
+                >
+                  ⬅️ Go Back
+                </button>
+                <button
+                  onClick={() => sendAIMessage("I need a moment to think about this.")}
+                  className="text-gray-600 hover:text-purple-600 transition-colors"
+                  disabled={isLoading}
+                >
+                  ⏸️ Pause
+                </button>
+              </div>
+              
+              <div className="text-gray-500">
+                Press Enter to send • Shift+Enter for new line
+              </div>
+            </div>
+
+            {audioBlob && (
+              <div className="mt-2 flex items-center space-x-2">
+                <button
+                  onClick={() => {
+                    const audio = new Audio(URL.createObjectURL(audioBlob));
+                    audio.play();
+                  }}
+                  className="flex items-center space-x-1 px-3 py-1 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm"
+                >
+                  <span>▶️</span>
+                  <span>Play Recording</span>
+                </button>
+                <button
+                  onClick={() => setAudioBlob(null)}
+                  className="text-gray-500 hover:text-red-500 text-sm"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    } else {
+      // Traditional Q&A Mode
+      return (
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold text-gray-900">Traditional Q&A Interview</h3>
+                <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                  Question {currentQuestionIndex + 1} of {questions.length}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+                ></div>
+              </div>
+            </div>
+
+            <div className="mb-8">
+              <h4 className="text-lg font-medium text-gray-800 mb-4">
+                {questions[currentQuestionIndex]?.question}
+              </h4>
+              
+              <textarea
+                value={currentAnswer}
+                onChange={(e) => setCurrentAnswer(e.target.value)}
+                placeholder="Share your thoughts here..."
+                className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="flex space-x-4">
                 <button
                   onClick={isRecording ? stopRecording : startRecording}
                   className={`flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold transition-colors ${
@@ -758,57 +959,132 @@ const StoryCreator = () => {
                     <span>Play Recording</span>
                   </button>
                 )}
-
-                <button
-                  onClick={() => sendAIMessage(currentAnswer)}
-                  disabled={!currentAnswer.trim() || isLoading}
-                  className="px-6 py-3 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isLoading ? 'Processing...' : 'Send Response'}
-                </button>
               </div>
 
-              {transcription && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="font-medium text-green-800 mb-2">🎤 Transcription:</h4>
-                  <p className="text-green-700 mb-3">{transcription}</p>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => enhanceTranscription(transcription)}
-                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
-                      disabled={isLoading}
-                    >
-                      ✨ Enhance with AI
-                    </button>
-                    <button
-                      onClick={keepTranscriptionAsIs}
-                      className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                    >
-                      ✓ Keep As Is
-                    </button>
-                  </div>
-                </div>
-              )}
+              <div className="flex space-x-3">
+                <button
+                  onClick={previousQuestion}
+                  disabled={currentQuestionIndex === 0}
+                  className="px-6 py-3 bg-gray-500 text-white rounded-lg font-semibold hover:bg-gray-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={nextQuestion}
+                  className="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600"
+                >
+                  {currentQuestionIndex === questions.length - 1 ? 'Finish' : 'Next'}
+                </button>
+              </div>
+            </div>
 
-              {aiPhase === 'wisdom_extraction' && aiMessages.length > 10 && (
-                <div className="text-center">
+            {transcription && (
+              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                <h4 className="font-medium text-green-800 mb-2">🎤 Transcription:</h4>
+                <p className="text-green-700 mb-3">{transcription}</p>
+                <div className="flex space-x-2">
                   <button
-                    onClick={generateAIBookOutline}
-                    className="px-8 py-4 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg font-semibold hover:from-purple-600 hover:to-blue-600 transition-all transform hover:scale-105"
+                    onClick={() => enhanceTranscription(transcription)}
+                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
+                    disabled={isLoading}
                   >
-                    Generate My Book 📚
+                    ✨ Enhance with AI
+                  </button>
+                  <button
+                    onClick={keepTranscriptionAsIs}
+                    className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+                  >
+                    ✓ Keep As Is
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       );
-    } else {
-      // Traditional Q&A Mode
-      return (
-        <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-8">Story Interview</h2>
+    }
+  };
+
+  // Enhanced message functions for chatbot interface
+  const enhanceMessage = async (messageIndex, content) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/enhance-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer demo-token'
+        },
+        body: JSON.stringify({
+          text: content,
+          enhancement_type: 'storytelling'
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const updatedMessages = [...aiMessages];
+        updatedMessages[messageIndex] = {
+          ...updatedMessages[messageIndex],
+          content: data.enhanced_text,
+          enhanced: true
+        };
+        setAiMessages(updatedMessages);
+      } else {
+        alert('Enhancement failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Enhancement error:', error);
+      alert('Enhancement failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const editMessage = (messageIndex) => {
+    const message = aiMessages[messageIndex];
+    const newContent = prompt('Edit your message:', message.content);
+    if (newContent && newContent !== message.content) {
+      const updatedMessages = [...aiMessages];
+      updatedMessages[messageIndex] = {
+        ...updatedMessages[messageIndex],
+        content: newContent
+      };
+      setAiMessages(updatedMessages);
+    }
+  };
+
+  const enhanceTranscription = async (text) => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/enhance-text`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer demo-token'
+        },
+        body: JSON.stringify({
+          text: text,
+          enhancement_type: 'storytelling'
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentAnswer(data.enhanced_text);
+        setTranscription('');
+      } else {
+        alert('Enhancement failed. Please try again.');
+      }
+    } catch (error) {
+      console.error('Enhancement error:', error);
+      alert('Enhancement failed. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderStoryGeneration = () => (
           
           <div className="bg-white rounded-lg shadow-lg p-8">
             <div className="flex justify-between items-center mb-6">
