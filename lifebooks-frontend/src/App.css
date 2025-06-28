@@ -187,12 +187,18 @@ body, p, div {
 /* Story Type Selection Cards */
 .story-type-card {
   background-color: white;
-  padding: 16px;
+  padding: 24px;
   border-radius: 12px;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
   cursor: pointer;
   transition: all 0.2s ease;
   border: 2px solid transparent;
+  text-align: center;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 
 .story-type-card:hover {
@@ -204,6 +210,32 @@ body, p, div {
 .story-type-card.selected {
   border-color: #4F46E5;
   background-color: #F0F9FF;
+}
+
+.story-type-card h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  margin: 16px 0 8px 0;
+}
+
+.story-type-card p {
+  font-size: 14px;
+  color: #6B7280;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.story-type-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background-color: #4F46E5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 16px;
 }
 
 /* AI Chat Interface */
@@ -283,13 +315,17 @@ body, p, div {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  margin: 24px 0;
+  gap: 16px;
+  margin: 32px 0;
+  padding: 24px;
+  background-color: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .voice-recording-btn {
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
   background-color: #F97316; /* Accent */
   border: none;
@@ -297,55 +333,89 @@ body, p, div {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transition: all 0.3s ease;
+  box-shadow: 0 6px 16px rgba(249, 115, 22, 0.3);
+  position: relative;
 }
 
 .voice-recording-btn:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+  transform: scale(1.1);
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.4);
 }
 
 .voice-recording-btn.recording {
   background-color: #DC2626; /* Recording Active */
   animation: pulse 1.5s infinite;
+  box-shadow: 0 6px 16px rgba(220, 38, 38, 0.4);
 }
 
 @keyframes pulse {
   0% {
     transform: scale(1);
     opacity: 1;
+    box-shadow: 0 6px 16px rgba(220, 38, 38, 0.4);
   }
   50% {
-    transform: scale(1.1);
-    opacity: 0.8;
+    transform: scale(1.15);
+    opacity: 0.9;
+    box-shadow: 0 8px 24px rgba(220, 38, 38, 0.6);
   }
   100% {
     transform: scale(1);
     opacity: 1;
+    box-shadow: 0 6px 16px rgba(220, 38, 38, 0.4);
   }
 }
 
 .voice-recording-btn svg {
-  width: 24px;
-  height: 24px;
+  width: 32px;
+  height: 32px;
   fill: white;
 }
 
 .recording-status {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 600;
   color: #6B7280;
+  text-align: center;
 }
 
 .recording-status.active {
   color: #DC2626;
+  font-size: 18px;
 }
 
 .recording-timer {
-  font-size: 14px;
+  font-size: 16px;
   color: #DC2626;
+  font-weight: 700;
+  background-color: #FEE2E2;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: 2px solid #DC2626;
+}
+
+/* Recording Instructions */
+.recording-instructions {
+  text-align: center;
+  margin-top: 16px;
+  padding: 16px;
+  background-color: #F3F4F6;
+  border-radius: 8px;
+  border-left: 4px solid #F97316;
+}
+
+.recording-instructions h4 {
+  font-size: 16px;
   font-weight: 600;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.recording-instructions p {
+  font-size: 14px;
+  color: #6B7280;
+  margin: 0;
 }
 
 /* Input Fields & Forms */
@@ -416,13 +486,33 @@ body, p, div {
   }
   
   .navbar-nav {
-    gap: 16px;
+    gap: 8px;
+  }
+  
+  .nav-button {
+    padding: 6px 10px;
+    font-size: 14px;
   }
   
   .btn, button {
     width: 100%;
     min-height: 48px;
     padding: 14px 24px;
+  }
+  
+  .story-type-card {
+    min-height: 160px;
+    padding: 20px;
+  }
+  
+  .story-type-card h3 {
+    font-size: 18px;
+  }
+  
+  .story-type-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
   }
   
   .chat-container {
@@ -443,6 +533,16 @@ body, p, div {
     width: 100%;
   }
   
+  .voice-recording-btn {
+    width: 72px;
+    height: 72px;
+  }
+  
+  .voice-recording-btn svg {
+    width: 28px;
+    height: 28px;
+  }
+  
   .section-padding {
     padding: 24px 16px;
   }
@@ -457,14 +557,24 @@ body, p, div {
 }
 
 @media (max-width: 480px) {
-  .voice-recording-btn {
-    width: 72px;
-    height: 72px;
+  .navbar-nav {
+    flex-wrap: wrap;
+    gap: 4px;
   }
   
-  .voice-recording-btn svg {
-    width: 28px;
-    height: 28px;
+  .nav-button {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+  
+  .voice-recording-container {
+    margin: 24px 0;
+    padding: 16px;
+  }
+  
+  .story-type-card {
+    min-height: 140px;
+    padding: 16px;
   }
 }
 
