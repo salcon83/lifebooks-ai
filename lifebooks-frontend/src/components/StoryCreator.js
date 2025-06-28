@@ -175,7 +175,7 @@ const StoryCreator = () => {
     }
   };
 
-  const API_BASE_URL = 'https://5001-i3ze25ku0nd9zq2nuuwwz-9a32bb50.manusvm.computer';
+  const API_BASE_URL = 'https://xlhyimcj637n.manus.space';
   
   const transcribeAudio = async (audioBlob) => {
     if (!audioBlob) return;
@@ -205,11 +205,13 @@ const StoryCreator = () => {
           setTranscription('Recording processed. No speech detected.');
         }
       } else {
-        setTranscription('Recording completed. Transcription service unavailable.');
+        // Fallback: Let user type their response
+        setTranscription('Voice recording completed. Please type your response below or try recording again.');
       }
     } catch (error) {
       console.error('Transcription error:', error);
-      setTranscription('Recording completed. Unable to connect to transcription service.');
+      // Fallback: Let user type their response  
+      setTranscription('Voice recording completed. Please type your response below or try recording again.');
     }
     setIsLoading(false);
   };
