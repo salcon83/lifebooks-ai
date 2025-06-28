@@ -63,16 +63,16 @@ body, p, div {
 
 /* Navigation Header */
 .navbar {
-  height: 60px;
-  background-color: #FFFFFF;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  height: 60px !important;
+  background-color: #FFFFFF !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
   position: sticky;
   top: 0;
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
+  padding: 0 24px !important;
 }
 
 .navbar-container {
@@ -85,7 +85,7 @@ body, p, div {
 .navbar-brand h1 {
   font-size: 24px;
   font-weight: 600;
-  color: #4F46E5; /* Primary */
+  color: #4F46E5 !important; /* Primary */
   margin: 0;
 }
 
@@ -96,31 +96,31 @@ body, p, div {
 }
 
 .nav-button {
-  background-color: #4F46E5; /* Primary CTA */
-  color: white;
-  border: none;
-  font-size: 16px;
-  font-weight: 500;
-  padding: 8px 12px;
-  border-radius: 6px;
+  background-color: #4F46E5 !important; /* Primary CTA */
+  color: white !important;
+  border: none !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
   cursor: pointer;
   transition: all 0.2s ease;
   font-family: inherit;
 }
 
 .nav-button:hover {
-  background-color: #3730A3; /* Darker primary */
+  background-color: #3730A3 !important; /* Darker primary */
   transform: translateY(-1px);
 }
 
 .nav-button.active {
-  background-color: #3730A3; /* Darker primary */
+  background-color: #3730A3 !important; /* Darker primary */
   font-weight: 600;
   text-decoration: underline;
 }
 
 .nav-link {
-  color: #111827;
+  color: #111827 !important;
   text-decoration: none;
   font-weight: 500;
   padding: 8px 12px;
@@ -129,12 +129,12 @@ body, p, div {
 }
 
 .nav-link:hover {
-  color: #4F46E5; /* Primary */
+  color: #4F46E5 !important; /* Primary */
   background-color: #F3F4F6;
 }
 
 .nav-link.active {
-  color: #4F46E5; /* Primary */
+  color: #4F46E5 !important; /* Primary */
   text-decoration: underline;
 }
 
