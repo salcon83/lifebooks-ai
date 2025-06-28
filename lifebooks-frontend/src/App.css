@@ -94,9 +94,9 @@ body, p, div {
 }
 
 .nav-button {
-  background: none;
+  background-color: #4F46E5; /* Primary CTA */
+  color: white;
   border: none;
-  color: #111827;
   font-size: 16px;
   font-weight: 500;
   padding: 8px 12px;
@@ -107,14 +107,14 @@ body, p, div {
 }
 
 .nav-button:hover {
-  color: #4F46E5; /* Primary */
-  background-color: #F3F4F6;
+  background-color: #3730A3; /* Darker primary */
+  transform: translateY(-1px);
 }
 
 .nav-button.active {
-  color: #4F46E5; /* Primary */
-  background-color: #EEF2FF;
+  background-color: #3730A3; /* Darker primary */
   font-weight: 600;
+  text-decoration: underline;
 }
 
 .nav-link {
