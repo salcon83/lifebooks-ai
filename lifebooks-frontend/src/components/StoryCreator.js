@@ -904,20 +904,20 @@ const StoryCreator = () => {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-semibold text-gray-900">Traditional Q&A Interview</h3>
                 <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
-                  Question {currentQuestionIndex + 1} of {questions.length}
+                  Question {currentQuestionIndex + 1} of {aiQuestions.length}
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
                 <div 
                   className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+                  style={{ width: `${((currentQuestionIndex + 1) / aiQuestions.length) * 100}%` }}
                 ></div>
               </div>
             </div>
 
             <div className="mb-8">
               <h4 className="text-lg font-medium text-gray-800 mb-4">
-                {questions[currentQuestionIndex]?.question}
+                {aiQuestions[currentQuestionIndex]}
               </h4>
               
               <textarea
@@ -968,7 +968,7 @@ const StoryCreator = () => {
                   onClick={nextQuestion}
                   className="px-6 py-3 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600"
                 >
-                  {currentQuestionIndex === questions.length - 1 ? 'Finish' : 'Next'}
+                  {currentQuestionIndex === aiQuestions.length - 1 ? 'Finish' : 'Next'}
                 </button>
               </div>
             </div>
@@ -1046,150 +1046,6 @@ const StoryCreator = () => {
         content: newContent
       };
       setAiMessages(updatedMessages);
-    }
-  };
-
-  const enhanceTranscription = async (text) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/enhance-text`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer demo-token'
-        },
-        body: JSON.stringify({
-          text: text,
-          enhancement_type: 'storytelling'
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentAnswer(data.enhanced_text);
-        setTranscription('');
-      } else {
-        alert('Enhancement failed. Please try again.');
-      }
-    } catch (error) {
-      console.error('Enhancement error:', error);
-      alert('Enhancement failed. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const renderStoryGeneration = () => (
-          
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <div className="flex justify-between items-center mb-6">
-              <span className="text-sm text-gray-500">
-                Question {currentQuestionIndex + 1} of {aiQuestions.length}
-              </span>
-              <div className="w-64 bg-gray-200 rounded-full h-2">
-                <div 
-                  className="bg-orange-500 h-2 rounded-full transition-all"
-                  style={{ width: `${((currentQuestionIndex + 1) / aiQuestions.length) * 100}%` }}
-                />
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <h3 className="text-xl font-semibold mb-4 text-gray-800">
-                {aiQuestions[currentQuestionIndex]}
-              </h3>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-lg font-medium mb-2">Your Answer</label>
-                <textarea
-                  value={currentAnswer}
-                  onChange={(e) => setCurrentAnswer(e.target.value)}
-                  placeholder="Type your answer here, or use voice recording below..."
-                  className="w-full p-4 border border-gray-300 rounded-lg h-32 text-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-              </div>
-
-              <div className="voice-recording-container">
-                <button
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={`voice-recording-btn ${isRecording ? 'recording' : ''}`}
-                >
-                  <svg viewBox="0 0 24 24" fill="currentColor">
-                    {isRecording ? (
-                      <rect x="6" y="6" width="12" height="12" rx="2"/>
-                    ) : (
-                      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                    )}
-                  </svg>
-                </button>
-                <div className={`recording-status ${isRecording ? 'active' : ''}`}>
-                  {isRecording ? 'Stop Recording' : 'Start Recording'}
-                </div>
-                {isRecording && (
-                  <div className="recording-timer">
-                    {formatTime(recordingTime)}
-                  </div>
-                )}
-
-                {audioBlob && (
-                  <button
-                    onClick={() => {
-                      const audio = new Audio(URL.createObjectURL(audioBlob));
-                      audio.play();
-                    }}
-                    className="btn btn-secondary"
-                    style={{marginTop: '12px'}}
-                  >
-                    ▶️ Play Recording
-                  </button>
-                )}
-              </div>
-
-              {transcription && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="font-medium text-green-800 mb-2">🎤 Transcription Result:</h4>
-                  <p className="text-green-700 mb-3">{transcription}</p>
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={() => enhanceTranscription(transcription)}
-                      className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 disabled:bg-gray-300"
-                      disabled={isLoading}
-                    >
-                      ✨ Let AI Enhance It
-                    </button>
-                    <button
-                      onClick={keepTranscriptionAsIs}
-                      className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-                    >
-                      ✓ Keep As Is
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-between">
-                <button
-                  onClick={previousQuestion}
-                  disabled={currentQuestionIndex === 0}
-                  className="px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  ← Previous
-                </button>
-                
-                <button
-                  onClick={nextQuestion}
-                  disabled={!currentAnswer.trim()}
-                  className="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
-                >
-                  {currentQuestionIndex === aiQuestions.length - 1 ? 'Generate Story' : 'Next →'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
     }
   };
 
